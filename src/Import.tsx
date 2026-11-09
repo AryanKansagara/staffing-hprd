@@ -88,7 +88,7 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
         </div>
       )}
 
-      {ds.shifts.length > 0 && <TitleMap project={project} ds={ds} reload={reload} readonly={readonly} />}
+      {ds.shifts.length > 0 && <TitleMap project={project} ds={ds} reload={reload} />}
     </>
   )
 }
@@ -207,7 +207,7 @@ function IssueList({ issues }: { issues: Issue[] }) {
   )
 }
 
-function TitleMap({ project, ds, reload, readonly }: { project: Project; ds: Dataset; reload: () => void; readonly: boolean }) {
+function TitleMap({ project, ds, reload }: { project: Project; ds: Dataset; reload: () => void }) {
   const titles = useMemo(() => {
     const m = new Map<string, { n: number; h: number; code: number | null }>()
     for (const s of ds.shifts) { const t = m.get(s.title) ?? { n: 0, h: 0, code: s.code }; t.n++; t.h += s.hours; m.set(s.title, t) }
@@ -227,7 +227,7 @@ function TitleMap({ project, ds, reload, readonly }: { project: Project; ds: Dat
       {titles.map(([t, x]) => (
         <div className="map-row" key={t}>
           <span className={x.code === null ? 'error' : ''}>{t}{x.code !== null && isNursing(x.code) ? <span className="chip neutral" style={{ marginLeft: 8 }}>{SHORT_CODE[x.code]}</span> : null}</span>
-          <select aria-label={`PBJ code for ${t}`} value={x.code ?? ''} disabled={readonly} onChange={e => void setCode(t, e.target.value === '' ? null : +e.target.value)} aria-invalid={x.code === null}>
+          <select aria-label={`PBJ code for ${t}`} value={x.code ?? ''} onChange={e => void setCode(t, e.target.value === '' ? null : +e.target.value)} aria-invalid={x.code === null}>
             <option value="">No code (excluded)</option>
             {Object.entries(JOB_CODES).map(([c, l]) => <option key={c} value={c}>{c} · {l}</option>)}
           </select>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseCsv, parseDate, parseHours } from './csv.ts'
-import { aggregateDays, dailyHprd, project, starEstimate, summarize, turnover } from './hprd.ts'
+import { aggregateDays, dailyHprd, project, starEstimate, starFor, summarize, turnover } from './hprd.ts'
 import { classifyPay, classifySource, detect, importCensus, importPbj, importTimesheet, pseudonym } from './importer.ts'
 import { guessCode } from './jobcodes.ts'
 import { coreByWeekday, forecast, historyInputs, plan, planDay, shiftGapRows } from './planner.ts'
@@ -267,4 +267,11 @@ test('history plan prices every missed day', () => {
   assert.ok(p.days[0].fill.rn.ot + p.days[0].fill.rn.agency > 24.9)
   assert.equal(p.days[1].cost, 0)
   assert.equal(dailyHprd(days, 'cms').length, 2)
+})
+
+test('the star estimate counts codes 5-12 even when targets use direct care', () => {
+  const d = [day('2026-10-05', 10, { rnDon: 8, rn: 4, cna: 28 })]
+  const direct = starFor(d, settings({ basis: 'direct' }))
+  assert.equal(direct.adjusted.total, 4)
+  assert.equal(direct.adjusted.rn, 1.2)
 })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { dailyHprd, MEASURE_LABEL, misses, starEstimate, summarize, type Measure } from './engine/hprd.ts'
+import { dailyHprd, MEASURE_LABEL, misses, starFor, summarize, type Measure } from './engine/hprd.ts'
 import { historyInputs, plan } from './engine/planner.ts'
 import { readiness } from './engine/readiness.ts'
 import { presetById, RULES_CHECKED } from './engine/rules.ts'
@@ -23,7 +23,7 @@ export default function Report({ id }: { id: string }) {
     const hp = dailyHprd(days, s.basis)
     const missed = hp.filter(d => misses(d, s.targets).length)
     const close = plan(historyInputs(days, s.basis), s.targets, s.rates)
-    return { s, sm, hp, missed, star: starEstimate(sm, s.star), close, cells: heatCells(days, s, 'total') }
+    return { s, sm, hp, missed, star: starFor(project.days, s, period.from, period.to), close, cells: heatCells(days, s, 'total') }
   }, [project, period?.key])
 
   if (loading) return <div className="boot"><span className="spinner" /> Preparing report</div>

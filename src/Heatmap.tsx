@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDays, dow } from './engine/csv.ts'
 import { fmtDayLong } from './ui.tsx'
 
@@ -26,6 +26,9 @@ const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'O
 /** Calendar heatmap, one column per week. Colour is distance from the target line. */
 export function Heatmap({ cells, target, label, onSelect, selected, unit = 'HPRD' }: { cells: HeatCell[]; target: number; label: string; onSelect?: (date: string) => void; selected?: string | null; unit?: string }) {
   const [tip, setTip] = useState<{ x: number; y: number; c: HeatCell } | null>(null)
+  const wrap = useRef<HTMLDivElement>(null)
+  // On narrow screens the calendar scrolls; start at the most recent weeks.
+  useEffect(() => { const w = wrap.current; if (w) w.scrollLeft = w.scrollWidth }, [cells.length])
   const grid = useMemo(() => {
     if (!cells.length) return { slots: [] as (HeatCell | null)[], months: [] as { col: number; label: string }[] }
     const byDate = new Map(cells.map(c => [c.date, c]))
@@ -36,7 +39,7 @@ export function Heatmap({ cells, target, label, onSelect, selected, unit = 'HPRD
     let i = 0
     for (let d = start; d <= end || dow(d) !== 0; d = addDays(d, 1), i++) {
       const col = Math.floor(i / 7)
-      if (d.endsWith('-01') || i === 0) {
+      if ((d.endsWith('-01') && d <= end) || i === 0) {
         const at = col + (d.endsWith('-01') && dow(d) > 3 ? 1 : 0)
         if (months.length && at - months.at(-1)!.col < 3) months.pop()
         months.push({ col: at, label: MONTH[+d.slice(5, 7) - 1] })
@@ -56,11 +59,11 @@ export function Heatmap({ cells, target, label, onSelect, selected, unit = 'HPRD
   return (
     <div>
       <div className="heat-months" aria-hidden="true">{grid.months.map((m, i) => <span key={i} style={{ left: `calc(${m.col} * (var(--cell, 15px) + 3px))` }}>{m.label}</span>)}</div>
-      <div className="heat-wrap">
+      <div className="heat-wrap" ref={wrap}>
         <div className="heat-days" aria-hidden="true"><span /><span>Mon</span><span /><span>Wed</span><span /><span>Fri</span><span /></div>
         <div className="heat" role="grid" aria-label={`${label}: ${below} of ${valid} days below ${target.toFixed(2)} ${unit}`} onMouseLeave={() => setTip(null)}>
           {grid.slots.map((c, i) => {
-            if (!c) return <span key={i} className="cell empty" aria-hidden="true" />
+            if (!c) return <span key={i} className="cell pad" aria-hidden="true" />
             const cls = c.value === null ? 'nocensus' : bin(c.value - target)
             return (
               <button

@@ -24,6 +24,8 @@ export interface SampleDef {
   rnFloor: number
   /** Chance that an open shift goes to someone already near 40 hours (overtime). */
   otPickup: number
+  /** Daily chance that a staff member leaves and is replaced. */
+  leaveRate: number
   start: string
   end: string
   seed: number
@@ -34,13 +36,13 @@ export const SAMPLES: SampleDef[] = [
     id: 'maple', name: 'Maple Ridge Health & Rehabilitation', location: 'Lancaster, PA', state: 'PA', beds: 120, census: 108, units: ['North (skilled)', 'South (long-term)', 'East (memory care)'],
     blurb: '120 beds. Weekend RN coverage falls apart and agency covers a third of aide hours.', preset: 'cms2024',
     hprd: { rn: 0.6, lpn: 0.8, na: 2.22 }, weekend: { rn: 0.55, lpn: 0.93, na: 0.9 }, agency: { rn: 0.18, lpn: 0.22, na: 0.3 }, agencyWeekendBoost: 1.45,
-    staff: { rn: 14, lpn: 18, na: 44 }, zeroRnWeekends: ['2026-10-18', '2026-10-25'], rnFloor: 16, otPickup: 0.16, start: '2026-05-01', end: '2026-10-31', seed: 7,
+    staff: { rn: 11, lpn: 13, na: 34 }, zeroRnWeekends: ['2026-10-18', '2026-10-25'], rnFloor: 16, otPickup: 0.35, leaveRate: 0.17, start: '2026-05-01', end: '2026-10-31', seed: 7,
   },
   {
     id: 'cedar', name: 'Cedar Hollow Care Center', location: 'Utica, NY', state: 'NY', beds: 60, census: 55, units: ['First floor', 'Second floor'],
     blurb: '60 beds in New York. Hovering at the 3.5 state minimum, a few days under every month.', preset: 'ny',
     hprd: { rn: 0.5, lpn: 0.72, na: 2.31 }, weekend: { rn: 0.9, lpn: 0.97, na: 0.96 }, agency: { rn: 0.04, lpn: 0.06, na: 0.08 }, agencyWeekendBoost: 1.3,
-    staff: { rn: 6, lpn: 8, na: 22 }, zeroRnWeekends: [], rnFloor: 0, otPickup: 0.1, start: '2026-05-01', end: '2026-10-31', seed: 21,
+    staff: { rn: 5, lpn: 7, na: 18 }, zeroRnWeekends: [], rnFloor: 0, otPickup: 0.1, leaveRate: 0.06, start: '2026-05-01', end: '2026-10-31', seed: 21,
   },
 ]
 
@@ -60,7 +62,7 @@ const TITLES: Record<Group, string[]> = {
 const AGENCY_TITLE: Record<Group, string> = { rn: 'Agency RN', lpn: 'Agency LPN', na: 'Agency CNA' }
 const SHIFT: Record<Group, number[]> = { rn: [12, 8, 8], lpn: [8, 8, 12], na: [7.5, 8, 8] }
 
-interface Person { id: string; name: string; group: Group; title: string; hire: string; term?: string; week: Record<string, number> }
+interface Person { id: string; name: string; group: Group; title: string; hire: string; term?: string; week: Record<string, number>; last?: string }
 
 export interface SampleFiles { timesheet: string; census: string; rows: number }
 
@@ -88,6 +90,7 @@ export function generate(def: SampleDef): SampleFiles {
     rows.push([p.id, p.name, p.title, fmtUS(date), hours.toFixed(2), pay, type, p.hire ? fmtUS(p.hire) : '', p.term ? fmtUS(p.term) : ''])
 
   let census = def.census
+  let agencySeq = 0
   for (let date = def.start; date <= def.end; date = addDays(date, 1)) {
     census = Math.max(def.census - 9, Math.min(def.beds - 1, census + Math.round((r() - 0.5) * 3 + (def.census - census) * 0.15)))
     // A two-day hole in the census report for the readiness check to find.
@@ -101,7 +104,7 @@ export function generate(def: SampleDef): SampleFiles {
     }
     const we = isWeekend(date)
     // Turnover: now and then someone leaves and a new hire replaces them.
-    if (r() < 0.035) {
+    if (r() < def.leaveRate) {
       const active = staff.filter(p => !p.term)
       const leaver = pick(active)
       leaver.term = date
@@ -117,9 +120,10 @@ export function generate(def: SampleDef): SampleFiles {
         const len = pick(SHIFT[g])
         const agencyP = def.agency[g] * (we ? def.agencyWeekendBoost : 1)
         if (r() < agencyP) {
-          emit({ id: `AG-${g.toUpperCase()}-${Math.floor(r() * 40) + 1}`, name: '', title: AGENCY_TITLE[g] }, date, len, 'REG', 'Agency')
+          emit({ id: `AG-${g.toUpperCase()}-${++agencySeq % 60 + 1}`, name: '', title: AGENCY_TITLE[g] }, date, len, 'REG', 'Agency')
         } else {
-          const pool = staff.filter(p => p.group === g && p.hire <= date && (!p.term || p.term >= date))
+          const pool = staff.filter(p => p.group === g && p.hire <= date && (!p.term || p.term >= date) && p.last !== date)
+          if (!pool.length) { scheduled += len; continue }
           const wk = weekKey(date)
           pool.sort((a, b) => (a.week[wk] ?? 0) - (b.week[wk] ?? 0) + (r() - 0.5) * 12)
           const p = r() < def.otPickup ? pool[pool.length - 1 - Math.floor(r() * 3)] ?? pool[0] : pool[0]
@@ -128,6 +132,7 @@ export function generate(def: SampleDef): SampleFiles {
           if (reg > 0) emit(p, date, reg, 'REG', 'Employee')
           if (len - reg > 0) emit(p, date, len - reg, 'OT', 'Employee')
           p.week[wk] = before + len
+          p.last = date
         }
         scheduled += len
       }

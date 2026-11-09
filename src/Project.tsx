@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { TABS, type Tab } from './App.tsx'
 import { toCsv } from './engine/csv.ts'
-import { dailyHprd, MEASURE_LABEL, misses, project as projectQ, starEstimate, summarize, type Measure, type Summary } from './engine/hprd.ts'
+import { dailyHprd, MEASURE_LABEL, misses, project as projectQ, starFor, summarize, type Measure, type Summary } from './engine/hprd.ts'
 import { SHORT_CODE } from './engine/jobcodes.ts'
 import { readiness } from './engine/readiness.ts'
 import { PRESETS, presetById, quarterOf, quarterRange } from './engine/rules.ts'
@@ -44,7 +44,9 @@ export default function ProjectView({ id, tab }: { id: string; tab: Tab }) {
   const { loading, project, ds, update, setSettings, reload } = useProject(id)
   const periods = useMemo(() => periodsOf(project?.days ?? []), [project?.days])
   const qp = new URLSearchParams(location.search).get('r')
-  const period = periods.find(p => p.key === qp) ?? periods[0] ?? null
+  // Default: the quarter to date once it has six weeks of data, otherwise the last full quarter.
+  const fallback = periods[0] && Date.parse(periods[0].to) - Date.parse(periods[0].from) < 42 * 86400000 ? periods.find(p => p.key.startsWith('q') && p !== periods[0]) ?? periods[0] : periods[0]
+  const period = periods.find(p => p.key === qp) ?? fallback ?? null
   const sm = useMemo(() => project && period ? summarize(project.days, project.settings, period.from, period.to) : null, [project, period?.key])
 
   useEffect(() => { if (project) document.title = `${project.name} · ${TAB_LABEL[tab]} · Staffing HPRD` }, [project?.name, tab])
@@ -139,8 +141,8 @@ export function TargetsBar({ s, onChange }: { s: Settings; onChange: (p: Partial
       {field('na', 'Aide HPRD')}
       <label className="field"><span>Counting</span>
         <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses.">
-          <option value="cms">Codes 5-12 (Care Compare)</option>
-          <option value="direct">Direct care only</option>
+          <option value="cms">PBJ 5-12</option>
+          <option value="direct">Direct care</option>
         </select>
       </label>
       <label className="toggle" style={{ alignSelf: 'center', paddingTop: 18 }}><input type="checkbox" checked={s.targets.rn24} onChange={e => set({ rn24: e.target.checked })} /><span className="small"><b>RN 24/7</b></span></label>
@@ -165,9 +167,10 @@ function Stat({ k, v, unit, sub, target, hit, children }: { k: string; v: string
 function Overview({ c }: { c: Ctx }) {
   const { sm, settings: s, project, period } = c
   const t = s.targets
-  const star = useMemo(() => starEstimate(sm, s.star), [sm, s.star])
+  const star = useMemo(() => starFor(project.days, s, period.from, period.to), [project.days, s, period.key])
   const proj = useMemo(() => projectQ(project.days, s.basis, t), [project.days, s.basis, t])
-  const cells = useMemo(() => heatCells(project.days.filter(d => d.date >= period.from && d.date <= period.to), s, 'total'), [project.days, period.key, s])
+  // The overview calendar always shows the last 26 weeks up to the end of the period, for context.
+  const cells = useMemo(() => heatCells(project.days.filter(d => d.date <= period.to).slice(-182), s, 'total'), [project.days, period.key, s])
   const ok = (v: number, tt: number | null) => tt === null ? null : v + 1e-9 >= tt
   return (
     <>
@@ -181,7 +184,7 @@ function Overview({ c }: { c: Ctx }) {
         <Stat k="Weekend total HPRD" v={hprd(sm.weekend.total.hprd)} sub={<>Weekdays {hprd(sm.weekday.total.hprd)} · gap <b className={sm.weekendGap.total > 0.2 ? 'neg' : ''}>{signed(-sm.weekendGap.total)}</b></>} />
         <Stat k="Weekend RN HPRD" v={hprd(sm.weekend.rn.hprd)} sub={<>Weekdays {hprd(sm.weekday.rn.hprd)} · gap <b className={sm.weekendGap.rn > 0.1 ? 'neg' : ''}>{signed(-sm.weekendGap.rn)}</b></>} />
         <Stat k="Agency and contract" v={pct(sm.agency.share)} unit="of hours" sub={`${money(sm.agency.cost, { compact: true })} · ${pct(sm.agency.costShare)} of nursing cost`} />
-        <Stat k="Overtime" v={sm.overtime.known ? pct(sm.overtime.share, 1) : '—'} unit={sm.overtime.known ? 'of employee hours' : ''} sub={sm.overtime.known ? `${Math.round(sm.overtime.hours).toLocaleString()} h at ${s.rates.otMultiplier}x` : 'Not in CMS data; import timesheets'} />
+        <Stat k="Overtime" v={sm.overtime.known ? pct(sm.overtime.share, 1) : '—'} sub={sm.overtime.known ? `of employee hours · ${Math.round(sm.overtime.hours).toLocaleString()} h at ${s.rates.otMultiplier}x` : 'Not in CMS data; import timesheets'} />
         <Stat k="Nursing cost per resident day" v={money(sm.cost.perResidentDay)} sub={`${money(sm.cost.total, { compact: true })} for ${plural(Math.round(sm.residentDays), 'resident day')}, at your rates`} />
       </div>
 
@@ -206,14 +209,14 @@ function Overview({ c }: { c: Ctx }) {
           <div className="panel-head"><h2>Quarter to date</h2>{proj && <span className="chip neutral">{proj.quarter.replace('Q', ' Q')}</span>}</div>
           {proj ? (
             <>
-              <table>
+              <div className="table-wrap"><table>
                 <thead><tr><th>Measure</th><th className="num">So far</th><th className="num">Projected</th><th className="num">Needed rest of quarter</th></tr></thead>
                 <tbody>
                   <tr><td>Total</td><td className="num">{hprd(proj.qtd.total)}</td><td className={`num${t.total !== null && proj.projected.total < t.total ? ' miss' : ''}`}>{hprd(proj.projected.total)}</td><td className="num">{proj.remaining ? hprd(proj.needed.total) : 'closed'}</td></tr>
                   <tr><td>RN</td><td className="num">{hprd(proj.qtd.rn)}</td><td className={`num${t.rn !== null && proj.projected.rn < t.rn ? ' miss' : ''}`}>{hprd(proj.projected.rn)}</td><td className="num">{proj.remaining ? hprd(proj.needed.rn) : 'closed'}</td></tr>
                   <tr><td>Weekend total</td><td className="num">{hprd(proj.qtd.weekend)}</td><td className="num">{hprd(proj.projected.weekend)}</td><td className="num muted">—</td></tr>
                 </tbody>
-              </table>
+              </table></div>
               <p className="small muted" style={{ marginTop: 10 }}>{proj.elapsed} days in, {proj.remaining} to go. The projection assumes the rest of the quarter looks like the last 28 days (census {Math.round(proj.runRate.census)}, {Math.round(proj.runRate.total)} nurse hours a day).</p>
               {proj.remaining > 0 && t.total !== null && proj.needed.total !== null && proj.needed.total > (proj.runRate.total / proj.runRate.census) + 0.01 && (
                 <div className="callout warn small">To finish at {t.total.toFixed(2)}, every remaining day needs {proj.needed.total.toFixed(2)} HPRD: about {Math.round((proj.needed.total - proj.runRate.total / proj.runRate.census) * proj.runRate.census)} more nurse hours a day than now. <Link href={`/app/p/${project.id}/planner`}>Plan it</Link></div>
@@ -224,7 +227,7 @@ function Overview({ c }: { c: Ctx }) {
       </div>
 
       <div className="panel">
-        <div className="panel-head"><h2>Daily total nurse HPRD</h2><Link href={`/app/p/${project.id}/calendar?r=${period.key}`} className="btn ghost sm">Daily detail</Link></div>
+        <div className="panel-head"><h2>Daily total nurse HPRD, last 26 weeks</h2><Link href={`/app/p/${project.id}/calendar?r=${period.key}`} className="btn ghost sm">Daily detail</Link></div>
         <Heatmap cells={cells} target={t.total ?? 3.48} label="Total nurse HPRD" onSelect={d => go(`/app/p/${project.id}/calendar?r=${period.key}&d=${d}`)} />
         <div style={{ marginTop: 10 }}><HeatLegend target={t.total ?? 3.48} /></div>
       </div>

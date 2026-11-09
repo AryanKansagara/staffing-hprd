@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { addDays, dow, toCsv } from './engine/csv.ts'
-import { starEstimate, summarize } from './engine/hprd.ts'
+import { starFor } from './engine/hprd.ts'
 import { coreByWeekday, forecast, historyInputs, OPTION_LABEL, plan, shiftGapRows, type Option, type PlanResult } from './engine/planner.ts'
 import type { Readiness } from './engine/readiness.ts'
 import { quarterRange, quarterOf } from './engine/rules.ts'
 import { GROUP_LABEL, GROUPS, type Group, type Rates, type Targets } from './engine/types.ts'
+import { getAverages, type Averages } from './engine/cms.ts'
 import { CmsLookup } from './Lookup.tsx'
 import { attachCms, closedPeriods, makeSnapshot } from './projectData.ts'
 import { slug, type Ctx } from './Project.tsx'
@@ -166,7 +167,7 @@ export function Pbj({ c, r }: { c: Ctx; r: Readiness }) {
             <div>
               <h3>{ch.title} <span className="sr">({ch.level === 'ok' ? 'passed' : ch.level})</span>{ch.level !== 'ok' && <span className={`chip ${ch.level === 'error' ? 'bad' : 'warn'}`} style={{ marginLeft: 8 }}>{ch.count}</span>}</h3>
               <p className="muted small" style={{ margin: 0 }}>{ch.detail}</p>
-              {ch.items.length > 0 && ch.level !== 'ok' && <ul>{ch.items.map((i, k) => <li key={k}>{i.line ? <code>line {i.line}</code> : null}{i.text}</li>)}{ch.count > ch.items.length && <li className="muted">and {ch.count - ch.items.length} more</li>}</ul>}
+              {ch.items.length > 0 && ch.level !== 'ok' && <ul>{ch.items.map((i, k) => <li key={k}>{i.line ? <code>line {i.line}</code> : null}{i.text}</li>)}{ch.items.length >= 50 && ch.count > ch.items.length && <li className="muted">and {ch.count - ch.items.length} more</li>}</ul>}
               {ch.id === 'codes' && ch.level === 'error' && <Link href={`/app/p/${project.id}/data`} className="btn ghost sm" style={{ marginTop: 8 }}>Map job titles</Link>}
             </div>
           </div>
@@ -182,7 +183,17 @@ export function Pbj({ c, r }: { c: Ctx; r: Readiness }) {
 export function Benchmark({ c }: { c: Ctx }) {
   const { project, settings: s, sm, setSettings } = c
   const cms = project.cms
-  const est = useMemo(() => starEstimate(sm, s.star), [sm, s.star])
+  const est = useMemo(() => starFor(project.days, s, c.period.from, c.period.to), [project.days, s, c.period.key])
+  // Without a linked facility, still benchmark against the state and the nation.
+  const [avg, setAvg] = useState<{ state: Averages | null; nation: Averages | null } | null>(null)
+  const [avgErr, setAvgErr] = useState<string | null>(null)
+  const st = project.facility.state
+  useEffect(() => {
+    if (cms || !/^[A-Z]{2}$/.test(st)) return
+    let live = true
+    getAverages(st).then(a => { if (live) setAvg(a) }, e => { if (live) setAvgErr(e instanceof Error ? e.message : String(e)) })
+    return () => { live = false }
+  }, [cms, st])
   const setStar = (k: keyof typeof s.star, v: string) => {
     const n = v.trim() === '' ? null : +v
     if (n !== null && !Number.isFinite(n)) return
@@ -203,6 +214,26 @@ export function Benchmark({ c }: { c: Ctx }) {
           <div className="panel-head"><h2>Compare with Care Compare</h2><CmsBadge /></div>
           <p className="muted">Find this building in the CMS Provider Data Catalog to compare your hours with what CMS reports for it, its state and the nation, and to use its real case-mix factors and turnover in the star estimate.</p>
           <CmsLookup onPick={async h => { await attachCms(project, h.ccn); toast(`Linked to ${h.name} (CCN ${h.ccn})`, { tone: 'ok' }) }} />
+          {/^[A-Z]{2}$/.test(st) && (
+            <>
+              <h3 style={{ marginTop: 22 }}>Against {st} and national averages</h3>
+              {avg ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Measure</th><th className="num">Yours, {c.period.label.replace(' (to date)', '')}</th><th className="num">{st} average</th><th className="num">National average</th></tr></thead>
+                    <tbody>{rows.map(([k, mine, , ], i) => {
+                      const key = (['total', 'rn', 'lpn', 'na', 'weekendTotal', 'weekendRn'] as const)[i]
+                      const sv = avg.state?.[key] ?? null, nv = avg.nation?.[key] ?? null
+                      return <tr key={k}><td>{k}</td><td className="num"><b>{hprd(mine)}</b></td><td className="num">{hprd(sv)}{sv ? <span className={`tiny ${mine >= sv ? 'pos' : 'neg'}`}> {signed(mine - sv)}</span> : null}</td><td className="num">{hprd(nv)}{nv ? <span className={`tiny ${mine >= nv ? 'pos' : 'neg'}`}> {signed(mine - nv)}</span> : null}</td></tr>
+                    })}
+                      <tr><td>Total nurse turnover</td><td className="num">{s.star.totalTurnover ?? '—'}%</td><td className="num">{avg.state?.totalTurnover ?? '—'}%</td><td className="num">{avg.nation?.totalTurnover ?? '—'}%</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : avgErr ? <p className="error small">{avgErr}</p> : <p className="muted small"><span className="spinner" /> Loading CMS State and US Averages</p>}
+              {avg?.nation?.processingDate && <p className="tiny muted" style={{ marginTop: 8 }}>CMS State and US Averages, {fmtDate(avg.nation.processingDate)} refresh (reported, not case-mix adjusted).</p>}
+            </>
+          )}
         </div>
       ) : (
         <div className="panel">

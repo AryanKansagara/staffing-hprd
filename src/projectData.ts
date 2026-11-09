@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { factorsFrom, getAverages, getPbjDays, getProvider, type Provider } from './engine/cms.ts'
 import { parseCsv } from './engine/csv.ts'
-import { aggregateDays, starEstimate, summarize, turnover } from './engine/hprd.ts'
+import { aggregateDays, starFor, summarize, turnover } from './engine/hprd.ts'
 import { detect, importCensus, importTimesheet } from './engine/importer.ts'
 import { quarterOf, quarterRange } from './engine/rules.ts'
 import { generate, SAMPLES } from './engine/sample.ts'
@@ -43,7 +43,7 @@ export function closedPeriods(days: Day[]): { label: string; kind: 'month' | 'qu
 
 export function makeSnapshot(days: Day[], s: Settings, period: { label: string; kind: 'month' | 'quarter'; from: string; to: string }, presetLabel: string): Snapshot {
   const sm = summarize(days, s, period.from, period.to)
-  const st = starEstimate(sm, s.star)
+  const st = starFor(days, s, period.from, period.to)
   const metrics: SnapshotMetrics = {
     total: sm.total.hprd, rn: sm.rn.hprd, lpn: sm.lpn.hprd, na: sm.na.hprd, licensed: sm.licensed.hprd,
     weekendTotal: sm.weekend.total.hprd, weekendRn: sm.weekend.rn.hprd, weekdayRn: sm.weekday.rn.hprd,
@@ -72,7 +72,7 @@ export async function createSampleProject(sampleId: string): Promise<Project> {
   const range = { from: days[0].date, to: days.at(-1)!.date }
   return saveProject({
     id: uuid(), name: def.name, createdAt: now, updatedAt: now, sampleId, source: 'sample',
-    facility: { name: def.name, ccn: '', state: def.state, city: def.location, beds: def.beds },
+    facility: { name: def.name, ccn: '', state: def.state, city: def.location.split(',')[0], beds: def.beds },
     settings, days, titleMap, snapshots,
     imports: [
       { id: uuid(), kind: 'timesheet', fileName: 'synthetic-timeclock-export.csv', format: formats[0], rows: files.rows, skipped: 0, errors: 0, at: now, ...range },
@@ -136,10 +136,16 @@ export function useProject(id: string) {
   useEffect(() => {
     if (!project) return
     let live = true
-    if (project.sampleId) { setDs(sampleData(project.sampleId)?.ds ?? EMPTY_DATASET); return }
+    if (project.sampleId) {
+      // Samples regenerate their shifts; the facility's own title mapping is applied on top.
+      const base = sampleData(project.sampleId)?.ds ?? EMPTY_DATASET
+      const tm = project.titleMap
+      setDs({ ...base, shifts: base.shifts.map(sh => sh.title in tm && tm[sh.title] !== sh.code ? { ...sh, code: tm[sh.title] } : sh) })
+      return
+    }
     void getData(project.id).then(d => { if (live) setDs(d ?? EMPTY_DATASET) })
     return () => { live = false }
-  }, [project?.id, project?.sampleId, importsKey, version])
+  }, [project?.id, project?.sampleId, importsKey, version, project?.sampleId ? JSON.stringify(project.titleMap) : ''])
   const update = (patch: Partial<Project>) => project ? saveProject({ ...project, ...patch }) : Promise.resolve(null)
   const setSettings = (patch: Partial<Settings>) => project ? saveProject({ ...project, settings: { ...project.settings, ...patch } }) : Promise.resolve(null)
   return { loading: list === null || (project !== null && ds === null), project, ds, update, setSettings, reload: () => setVersion(v => v + 1) }

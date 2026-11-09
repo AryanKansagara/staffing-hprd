@@ -190,6 +190,10 @@ export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zer
   return { stars, points, rawPoints: raw, maxPoints: max, adjusted: adj, parts, forcedOneStar, nextStar: up && !forcedOneStar ? { stars: up[0], pointsNeeded: up[1] - points } : null }
 }
 
+/** The star rating always counts PBJ codes 5-12, whatever basis the facility's own targets use. */
+export const starFor = (days: Day[], s: Pick<Settings, 'targets' | 'rates' | 'star'>, from?: string, to?: string) =>
+  starEstimate(summarize(days, { ...s, basis: 'cms' }, from, to), s.star)
+
 // ---------- Turnover from hire and termination dates ----------
 
 /** Separations during the window divided by people employed at any point in it, nursing staff only. */
