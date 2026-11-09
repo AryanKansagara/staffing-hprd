@@ -246,7 +246,7 @@ test('sample facilities run end to end through the importer and engine', () => {
     const cs = importCensus(cr, cd)
     assert.ok(!JSON.stringify(ts.shifts).includes(tr[1][1]), 'employee names are dropped')
     const days = aggregateDays(ts.shifts, cs.census)
-    const s = summarize(days, settings({ targets: presetById(def.preset)!.targets }), '2026-07-01', '2026-09-30')
+    const s = summarize(days, settings({ targets: presetById(def.preset)!.targets, basis: presetById(def.preset)!.basis }), '2026-07-01', '2026-09-30')
     assert.ok(s.total.hprd > 3 && s.total.hprd < 4.5, `${def.id} total ${s.total.hprd}`)
     if (def.id === 'maple') {
       assert.ok(s.weekendGap.rn > 0.15, 'Maple has a weekend RN gap')
