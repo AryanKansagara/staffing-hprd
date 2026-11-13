@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { parseCsv } from './engine/csv.ts'
-import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, KIND_FIELDS, REQUIRED, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
+import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
 import { isNursing, JOB_CODES, SHORT_CODE } from './engine/jobcodes.ts'
 import type { CensusRow, Shift } from './engine/types.ts'
 import { mergeDays, rebuild, sampleData } from './projectData.ts'
@@ -21,8 +21,18 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
     const next: Pending[] = []
     for (const f of Array.from(files)) {
       if (f.size > MAX_BYTES) { toast(`${f.name} is over 60 MB. Export one quarter at a time.`, { tone: 'error' }); continue }
-      if (!/\.(csv|txt|tsv)$/i.test(f.name) && f.type && !/csv|text/.test(f.type)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
-      const rows = parseCsv(await f.text())
+      if (!/\.(csv|txt|tsv|xml)$/i.test(f.name) && f.type && !/csv|text|xml/.test(f.type)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
+      const text = await f.text()
+      if (isPbjXml(text)) {
+        // The PBJ XML submission file: flattened to one row per hour entry, then mapped like any timesheet.
+        const x = pbjXmlToRows(text)
+        if (x.rows.length < 2) { toast(`${f.name}: PBJ XML file with no staffing hours.`, { tone: 'error' }); continue }
+        const det = detect(x.rows, f.name)!
+        next.push({ id: uuid(), file: f.name, rows: x.rows, kind: 'timesheet', det: { ...det, format: `PBJ XML submission${x.facilityId ? `, facility ${x.facilityId}` : ''}${x.quarter ? `, ${x.quarter}` : ''}` } })
+        continue
+      }
+      if (/\.xml$/i.test(f.name)) { toast(`${f.name}: not a PBJ XML file (no nursingHomeData element).`, { tone: 'error' }); continue }
+      const rows = parseCsv(text)
       const det = detect(rows, f.name)
       if (!det) {
         // Unknown layout: let the user map it, starting as a timesheet.
@@ -81,8 +91,8 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
             onDrop={e => { e.preventDefault(); setOver(false); void addFiles(e.dataTransfer.files) }}
           >
             <strong>Drop a timesheet export and a daily census report</strong>
-            <span className="muted small">CSV files. Time clock exports (UKG/Kronos timecard detail or any CSV with date, job title and hours), the PointClickCare census report, or a CMS PBJ daily staffing file. Read in your browser; employee names are dropped.</span>
-            <input ref={input} type="file" accept=".csv,.txt,.tsv,text/csv" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = '' }} />
+            <span className="muted small">CSV files: time clock exports (UKG/Kronos timecard detail or any CSV with date, job title and hours), the PointClickCare census report, or a CMS PBJ daily staffing file. Also the PBJ XML file you submit to CMS. Read in your browser; employee names are dropped.</span>
+            <input ref={input} type="file" accept=".csv,.txt,.tsv,.xml,text/csv,text/xml,application/xml" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = '' }} />
           </div>
           {pending.map(p => <PendingFile key={p.id} p={p} project={project} ds={ds} onDone={() => { setPending(x => x.filter(y => y.id !== p.id)); reload() }} onCancel={() => setPending(x => x.filter(y => y.id !== p.id))} onKind={k => setPending(x => x.map(y => y.id === p.id ? { ...y, kind: k, det: { ...y.det, kind: k, mapping: guessMapping(y.det.headers, k) } } : y))} />)}
         </div>
@@ -111,6 +121,7 @@ function FacilityForm({ project }: { project: Project }) {
 
 function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending; project: Project; ds: Dataset; onDone: () => void; onCancel: () => void; onKind: (k: Kind) => void }) {
   const [mapping, setMapping] = useState<Mapping>(p.det.mapping)
+  const [ccn, setCcn] = useState<string | null>(project.facility.ccn || null)
   const [busy, setBusy] = useState(false)
   const det = { ...p.det, mapping }
   const missing = REQUIRED[p.kind].filter(f => mapping[f] === undefined)
@@ -118,8 +129,8 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
     if (missing.length) return null
     if (p.kind === 'timesheet') { const r = importTimesheet(p.rows, det, project.titleMap, getPrefs().salt); return { issues: r.issues, ok: r.shifts.length, skipped: r.skipped, unmapped: [...r.titles].filter(([, t]) => t.code === null), dates: r.shifts.map(s => s.date) } }
     if (p.kind === 'census') { const r = importCensus(p.rows, det); return { issues: r.issues, ok: r.census.length, skipped: r.skipped, unmapped: [], dates: r.census.map(c => c.date) } }
-    const r = importPbj(p.rows, p.det.headerRow); return { issues: r.issues, ok: r.days.length, skipped: r.skipped, unmapped: [], dates: r.days.map(d => d.date) }
-  }, [p, mapping, missing.length])
+    const r = importPbj(p.rows, p.det.headerRow, ccn); return { issues: r.issues, ok: r.days.length, skipped: r.skipped, unmapped: [], dates: r.days.map(d => d.date), providers: r.providers, provider: r.provider }
+  }, [p, mapping, missing.length, ccn])
   const range = preview?.dates.length ? [preview.dates.reduce((a, b) => a < b ? a : b), preview.dates.reduce((a, b) => a > b ? a : b)] : null
 
   const commit = async () => {
@@ -140,7 +151,7 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
         census = [...m.values()].sort((x, y) => x.date.localeCompare(y.date))
         rows = r.census.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       } else {
-        const r = importPbj(p.rows, p.det.headerRow)
+        const r = importPbj(p.rows, p.det.headerRow, ccn)
         days = mergeDays(project.days, r.days)
         rows = r.days.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       }
@@ -179,6 +190,14 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
         </div>
       )}
       {p.kind === 'timesheet' && mapping.name !== undefined && mapping.emp === undefined && <p className="small muted">No employee ID column: names will be replaced by a one-way pseudonym on this device and discarded.</p>}
+      {preview && 'providers' in preview && preview.providers!.length > 1 && (
+        <label className="field" style={{ marginBottom: 14, maxWidth: 520 }}><span>Facility in this file ({preview.providers!.length})</span>
+          <select value={preview.provider ?? ''} onChange={e => setCcn(e.target.value || null)} aria-invalid={!preview.provider}>
+            <option value="">Choose a facility</option>
+            {preview.providers!.map(x => <option key={x.ccn} value={x.ccn}>{x.name} · CCN {x.ccn} · {x.days} days</option>)}
+          </select>
+        </label>
+      )}
       {missing.length > 0 && <p className="error small">Map {missing.map(f => FIELD_LABEL[f]).join(' and ')} to continue.</p>}
       {preview && (
         <>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { factorsFrom, getAverages, getPbjDays, getProvider, type Provider } from './engine/cms.ts'
+import { cmsStarInputs, getAverages, getPbjDays, getProvider } from './engine/cms.ts'
 import { parseCsv } from './engine/csv.ts'
 import { aggregateDays, starFor, summarize, turnover } from './engine/hprd.ts'
 import { detect, importCensus, importTimesheet } from './engine/importer.ts'
@@ -94,9 +94,6 @@ export async function loadCms(ccn: string, quarters = 2) {
   return { provider, avg, pbj }
 }
 
-export function cmsStarInputs(p: Provider): Settings['star'] {
-  return { ...factorsFrom(p), totalTurnover: p.turnover.total, rnTurnover: p.turnover.rn, adminDepartures: p.turnover.admins }
-}
 
 export async function createCmsProject(ccn: string): Promise<Project> {
   const existing = getProjects().find(p => p.source === 'cms' && p.facility.ccn === ccn)

@@ -11,6 +11,7 @@ const FIELDS = [
   'reported_licensed_staffing_hours_per_resident_per_day', 'reported_total_nurse_staffing_hours_per_resident_per_day',
   'total_number_of_nurse_staff_hours_per_resident_per_day_on_t_4a14', 'registered_nurse_hours_per_resident_per_day_on_the_weekend',
   'total_nursing_staff_turnover', 'registered_nurse_turnover', 'number_of_administrators_who_have_left_the_nursing_home',
+  'total_nursing_staff_turnover_footnote', 'registered_nurse_turnover_footnote', 'administrator_turnover_footnote',
   'nursing_casemix_index', 'nursing_casemix_index_ratio',
   'adjusted_rn_staffing_hours_per_resident_per_day', 'adjusted_total_nurse_staffing_hours_per_resident_per_day', 'adjusted_weekend_total_nurse_staffing_hours_per_resident_per_day',
   'processing_date',

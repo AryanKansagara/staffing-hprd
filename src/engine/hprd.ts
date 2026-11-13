@@ -3,7 +3,7 @@
 import { addDays, daysBetween, isWeekend } from './csv.ts'
 import { isNursing } from './jobcodes.ts'
 import { CUT_RN, CUT_RN_TURNOVER, CUT_TOTAL, CUT_TOTAL_TURNOVER, CUT_WEEKEND, quarterOf, quarterRange, STAR_POINTS } from './rules.ts'
-import { BUCKET_GROUP, BUCKETS, CODE_BUCKET, GROUPS, zeroHours, type Basis, type CensusRow, type Day, type Group, type Rates, type Settings, type Shift, type StarInputs, type Targets } from './types.ts'
+import { BUCKET_GROUP, BUCKETS, CODE_BUCKET, GROUPS, zeroHours, type Basis, type CensusRow, type Day, type Group, type Rates, type Settings, type Shift, type StarInputs, type Targets, type TurnoverKey } from './types.ts'
 
 // ---------- Aggregation ----------
 
@@ -151,7 +151,9 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
 // ---------- Five-Star staffing estimate ----------
 
 const pointsAtLeast = (cuts: [number, number][], v: number) => cuts.find(([, min]) => v >= min)![0]
-const pointsAtMost = (cuts: [number, number][], v: number) => (cuts.find(([, max]) => v <= max) ?? cuts.at(-1)!)[0]
+// Turnover cut points are exact fractions (28.571 = 2/7) but Care Compare publishes turnover to one
+// decimal, so 28.6 there means a value at or under the cut. Compare at the published precision.
+const pointsAtMost = (cuts: [number, number][], v: number) => (cuts.find(([, max]) => Math.round(v * 10) <= Math.round(max * 10)) ?? cuts.at(-1)!)[0]
 const adminPoints = (n: number) => n <= 0 ? 30 : n === 1 ? 25 : 10
 
 export interface StarEstimate {
@@ -166,7 +168,12 @@ export interface StarEstimate {
   nextStar: { stars: number; pointsNeeded: number } | null
 }
 
-/** Mirrors the Technical Users' Guide: six measures, points by decile, rescale to 380 when turnover is missing. */
+/**
+ * Mirrors the Technical Users' Guide: six measures, points by decile. A turnover measure CMS could not
+ * compute because data was missing scores the lowest points; one dropped for too few staff is left out
+ * and the rest rescaled to 380. Checked against every rated facility in the October 2026 Care Compare
+ * refresh (see /docs).
+ */
 export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zeroRnDays'>, st: StarInputs): StarEstimate {
   const adj = { total: sm.total.hprd * st.factorTotal, rn: sm.rn.hprd * st.factorRn, weekend: sm.weekend.total.hprd * st.factorWeekend }
   const nextUp = (cuts: [number, number][], v: number) => {
@@ -178,9 +185,14 @@ export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zer
     { key: 'rn', label: 'Adjusted RN HPRD', value: adj.rn.toFixed(2), points: pointsAtLeast(CUT_RN, adj.rn), max: 100, next: nextUp(CUT_RN, adj.rn) },
     { key: 'weekend', label: 'Adjusted weekend total HPRD', value: adj.weekend.toFixed(2), points: pointsAtLeast(CUT_WEEKEND, adj.weekend), max: 50, next: nextUp(CUT_WEEKEND, adj.weekend) },
   ]
+  const low = st.lowest ?? []
+  const missing = (key: TurnoverKey, label: string, max: number, min: number) => { if (low.includes(key)) parts.push({ key, label, value: 'not available', points: min, max }) }
   if (st.totalTurnover !== null) parts.push({ key: 'tto', label: 'Total nurse turnover', value: st.totalTurnover.toFixed(1) + '%', points: pointsAtMost(CUT_TOTAL_TURNOVER, st.totalTurnover), max: 50 })
+  else missing('tto', 'Total nurse turnover', 50, 5)
   if (st.rnTurnover !== null) parts.push({ key: 'rto', label: 'RN turnover', value: st.rnTurnover.toFixed(1) + '%', points: pointsAtMost(CUT_RN_TURNOVER, st.rnTurnover), max: 50 })
+  else missing('rto', 'RN turnover', 50, 5)
   if (st.adminDepartures !== null) parts.push({ key: 'adm', label: 'Administrator departures', value: String(st.adminDepartures), points: adminPoints(st.adminDepartures), max: 30 })
+  else missing('adm', 'Administrator departures', 30, 10)
   const raw = parts.reduce((a, p) => a + p.points, 0)
   const max = parts.reduce((a, p) => a + p.max, 0)
   const points = Math.round(raw * 380 / max)

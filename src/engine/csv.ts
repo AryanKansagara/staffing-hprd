@@ -32,7 +32,9 @@ const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5,
 
 /** Dates as exported by time clocks and EHR reports. Returns YYYY-MM-DD or null. */
 export function parseDate(s: string): string | null {
-  const t = s.trim().split(/[ T]/)[0]
+  // Time clocks often prefix the weekday: "Mon 10/05/2026".
+  s = s.trim().replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,? +(?=\d)/i, '')
+  const t = s.split(/[ T]/)[0]
   let y: number, m: number, d: number
   let r: RegExpMatchArray | null
   if ((r = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [y, m, d] = [+r[1], +r[2], +r[3]]

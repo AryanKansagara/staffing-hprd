@@ -187,6 +187,7 @@ export function Benchmark({ c }: { c: Ctx }) {
   // Without a linked facility, still benchmark against the state and the nation.
   const [avg, setAvg] = useState<{ state: Averages | null; nation: Averages | null } | null>(null)
   const [avgErr, setAvgErr] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const st = project.facility.state
   useEffect(() => {
     if (cms || !/^[A-Z]{2}$/.test(st)) return
@@ -254,6 +255,12 @@ export function Benchmark({ c }: { c: Ctx }) {
             </table>
           </div>
           <p className="tiny muted" style={{ marginTop: 8 }}>Care Compare figures are from the {cms.provider.processingDate ? fmtDate(cms.provider.processingDate) : 'latest'} refresh, which reflects an earlier PBJ quarter; PBJ daily data loaded: {cms.pbjQuarters.join(', ') || 'none'}. Loaded {new Date(cms.fetchedAt).toLocaleDateString()}. CMS divides by its MDS-derived census, so small differences from your own census are expected.</p>
+          <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} disabled={refreshing} onClick={async () => {
+            setRefreshing(true)
+            try { await attachCms(project, cms.provider.ccn); toast('Care Compare data refreshed; star inputs reset to the CMS values', { tone: 'ok' }) }
+            catch (e) { toast(e instanceof Error ? e.message : 'Refresh failed', { tone: 'error' }) }
+            finally { setRefreshing(false) }
+          }}>{refreshing ? 'Refreshing' : 'Refresh from Care Compare'}</button>
         </div>
       )}
 

@@ -2,7 +2,7 @@
 // Provider Data Catalog sends no CORS headers) and PBJ Daily Nurse Staffing (straight from
 // data.cms.gov, which does).
 import { pbjRecordToDay } from './importer.ts'
-import type { Day } from './types.ts'
+import type { Day, StarInputs, TurnoverKey } from './types.ts'
 
 /** PBJ Daily Nurse Staffing API dataset ids by quarter, from the data.cms.gov catalog as of 2026-11-08. */
 export const PBJ_DATASETS: [string, string][] = [
@@ -29,6 +29,8 @@ export interface Provider {
   reported: { total: number | null; rn: number | null; lpn: number | null; na: number | null; licensed: number | null; weekendTotal: number | null; weekendRn: number | null }
   adjusted: { total: number | null; rn: number | null; weekendTotal: number | null }
   turnover: { total: number | null; rn: number | null; admins: number | null }
+  /** Care Compare footnotes on the turnover measures (26 = data did not support it, 27 = too few staff). Absent in records saved before 2026-11. */
+  turnoverFootnotes?: { total: string; rn: string; admins: string }
   cmiRatio: number | null
   processingDate: string
 }
@@ -51,6 +53,7 @@ export function toProvider(r: Row): Provider {
     },
     adjusted: { total: num(r.adjusted_total_nurse_staffing_hours_per_resident_per_day), rn: num(r.adjusted_rn_staffing_hours_per_resident_per_day), weekendTotal: num(r.adjusted_weekend_total_nurse_staffing_hours_per_resident_per_day) },
     turnover: { total: num(r.total_nursing_staff_turnover), rn: num(r.registered_nurse_turnover), admins: num(r.number_of_administrators_who_have_left_the_nursing_home) },
+    turnoverFootnotes: { total: r.total_nursing_staff_turnover_footnote ?? '', rn: r.registered_nurse_turnover_footnote ?? '', admins: r.administrator_turnover_footnote ?? '' },
     cmiRatio: num(r.nursing_casemix_index_ratio),
     processingDate: r.processing_date ?? '',
   }
@@ -67,6 +70,14 @@ export const toAverages = (r: Row): Averages => ({
 export function factorsFrom(p: Provider) {
   const f = (a: number | null, b: number | null) => a && b ? Math.round(a / b * 1000) / 1000 : 1
   return { factorTotal: f(p.adjusted.total, p.reported.total), factorRn: f(p.adjusted.rn, p.reported.rn), factorWeekend: f(p.adjusted.weekendTotal, p.reported.weekendTotal) }
+}
+
+/** Star inputs straight from a Care Compare record, including how CMS scored any missing turnover measure. */
+export function cmsStarInputs(p: Provider): StarInputs {
+  const f = p.turnoverFootnotes
+  const lowest = f ? (([['tto', p.turnover.total, f.total], ['rto', p.turnover.rn, f.rn], ['adm', p.turnover.admins, f.admins]] as const)
+    .filter(([, v, fn]) => v === null && /\b26\b/.test(fn)).map(([k]) => k as TurnoverKey)) : []
+  return { ...factorsFrom(p), totalTurnover: p.turnover.total, rnTurnover: p.turnover.rn, adminDepartures: p.turnover.admins, lowest }
 }
 
 export function titleCase(s = '') {

@@ -80,7 +80,15 @@ export interface StarInputs {
   totalTurnover: number | null
   rnTurnover: number | null
   adminDepartures: number | null
+  /**
+   * Missing turnover measures that CMS scores at the lowest points instead of dropping (Care Compare
+   * footnote 26: the facility's PBJ data did not support the calculation). A missing measure not listed
+   * here is dropped and the other points are rescaled to 380 (footnote 27, too few staff).
+   */
+  lowest?: TurnoverKey[]
 }
+
+export type TurnoverKey = 'tto' | 'rto' | 'adm'
 
 export interface Settings {
   preset: string

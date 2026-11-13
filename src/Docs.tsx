@@ -48,7 +48,7 @@ export default function Docs() {
           <Code label="timesheet.csv" code={TEMPLATE} />
           <ul>
             <li><b>Hours</b>: decimals (7.5) or clock durations (7:30). Rows of zero hours are skipped; negative rows are reported.</li>
-            <li><b>Pay code</b>: anything containing OT, overtime, double time or premium counts as overtime. PTO, vacation, sick, holiday (not worked), bereavement, jury duty, leave and bonus rows are excluded, as PBJ counts only hours paid for work performed. “Holiday Worked” counts as worked.</li>
+            <li><b>Pay code</b>: anything containing OT, overtime or double time counts as overtime. PTO, vacation, sick, holiday (not worked), bereavement, jury duty, leave and bonus rows are excluded, as PBJ counts only hours paid for work performed. “Holiday Worked” counts as worked. Shift differentials, weekend premiums and charge pay are excluded too: time clocks book them as extra rows that repeat hours already on a worked row. PBJ pay type codes 1 and 2 are employees, 3 is contract.</li>
             <li><b>Employment type</b>: values containing agency, registry or external are agency; contract, 1099 or traveler are contract. Both are reported to PBJ as pay type 3 (contract) and shown together as agency/contract. Everything else is an employee.</li>
             <li><b>Names</b>: if there is an employee ID column, name columns are ignored. If there is not, each name becomes a one-way pseudonym on this device and the name is discarded.</li>
           </ul>
@@ -56,17 +56,20 @@ export default function Docs() {
           <ol>
             <li>Run a timecard detail style report for the period: in Workforce Central, a Time Detail or Pay Code report from the Reports area; in UKG Pro WFM (Dimensions), a timecard or hours-by-labor-category report from the Report Library. Ask your UKG administrator for the saved report your payroll team uses for PBJ if one exists.</li>
             <li>Include: Person Number, Primary Job (or the labor level that holds the job), Apply Date, Pay Code and Hours (as decimal hours).</li>
-            <li>Export to CSV. Headers such as <code>Person Number</code>, <code>Apply Date</code> and <code>Labor Level</code> are recognised automatically as a UKG/Kronos export.</li>
+            <li>Export to CSV. Headers such as <code>Person Number</code>, <code>Apply Date</code> and <code>Labor Level</code> are recognised automatically as a UKG/Kronos export. Report title lines above the header, weekday-prefixed dates (<code>Mon 10/05/2026</code>), hh:mm amounts and subtotal rows are handled.</li>
           </ol>
           <h3>PointClickCare census</h3>
           <ol>
             <li>In PointClickCare, open the census reports in the Admin module and run a daily census report (by day, or by day and unit) for the same period as the timesheet.</li>
-            <li>Export it to Excel and save as CSV. The importer needs a date column and a census or occupied-beds column. When there is a unit or floor column, rows for the same day are added together.</li>
+            <li>Export it to Excel and save as CSV. The importer needs a date column and a census or occupied-beds column. When there is a unit, floor or payer column (census by payer: Medicare A, Medicaid, private), rows for the same day are added together and “Total” rows are skipped.</li>
             <li>Use the midnight census your facility uses for daily reporting. CMS computes its own census from MDS assessments, so expect small differences from Care Compare.</li>
           </ol>
           <Code label="census.csv" code={CENSUS} />
+          <h3>PBJ XML submission file</h3>
+          <p>The quarterly XML your payroll or scheduling vendor produces for CMS (<code>nursingHomeData</code>, NHPBJ XSD 4.10.0, required for submissions since April 1, 2026) imports as a timesheet: one row per hour entry with the PBJ job code, pay type (3 = contract) and the hire and termination dates from the employees section. It has no census, so import a census report alongside it. Line numbers in the validation report refer to hour entries, not XML lines.</p>
           <h3>CMS PBJ Daily Nurse Staffing file</h3>
-          <p>The public quarterly file from data.cms.gov (columns <code>PROVNUM</code>, <code>WorkDate</code>, <code>MDScensus</code>, <code>Hrs_RN_emp</code> and so on) imports directly as daily totals. Filter it to one CCN first: the full file covers every US nursing home. Searching a facility in the app loads the same data without a download.</p>
+          <p>The public quarterly file from data.cms.gov (columns <code>PROVNUM</code>, <code>WorkDate</code>, <code>MDScensus</code>, <code>Hrs_RN_emp</code> and so on) imports directly as daily totals, including the 2017 to 2019 files with lowercase headers. When a file holds several facilities you choose one by CCN; the full national file is over the 60 MB limit, so download it filtered to your CCN from the dataset page. Searching a facility in the app loads the same data without a download.</p>
+          <p>Checked against real data: importing the 2026 Q2 file for CCN 015009 reproduces the total, RN, LPN, aide and weekend HPRD that Care Compare published for it in the October 2026 refresh to five decimals.</p>
 
           <h2 id="hprd">How HPRD is computed</h2>
           <ul>
@@ -113,7 +116,9 @@ export default function Docs() {
             <div className="table-wrap"><table><thead><tr><th>RN turnover</th><th className="num">Points</th></tr></thead><tbody>{cutRows(CUT_RN_TURNOVER, false).map(([p, r]) => <tr key={p}><td>{r}</td><td className="num">{p}</td></tr>)}</tbody></table></div>
             <div className="table-wrap"><table><thead><tr><th>Administrator departures</th><th className="num">Points</th></tr></thead><tbody><tr><td>None</td><td className="num">30</td></tr><tr><td>One</td><td className="num">25</td></tr><tr><td>Two or more</td><td className="num">10</td></tr></tbody></table></div>
           </div>
-          <p>When turnover measures are missing, CMS rescales the available points to 380; the estimate does the same. Exceptions: no staffing data by the deadline, or four or more days in the quarter with residents and no RN hours, mean one star. A failed PBJ audit means one star for three months.</p>
+          <p>Missing turnover measures are handled two ways, and the estimate follows Care Compare’s footnotes when a facility is linked: a measure CMS could not compute because the PBJ data did not support it (footnote 26) scores the lowest points (5, or 10 for administrators); one dropped because too few staff were eligible (footnote 27) is left out and the other points are rescaled to 380. A turnover field you leave blank is treated as dropped and rescaled. Turnover is compared at the one decimal Care Compare publishes, since its cut points are exact fractions (28.571% is 2/7).</p>
+          <p><b>Validation</b> (run November 13, 2026): fed the adjusted HPRD, turnover and footnotes Care Compare published in the October 2026 refresh, the estimate gives the published staffing rating for 14,068 of 14,214 rated facilities (99.0%). Of the rest, 123 carry footnote 24, a one-star override the published measures cannot show, and 23 are one band off.</p>
+          <p>Other exceptions: no staffing data by the deadline, or four or more days in the quarter with residents and no RN hours, mean one star. A failed PBJ audit means one star for three months.</p>
 
           <h2 id="pbj">PBJ deadlines and readiness checks</h2>
           <p>PBJ data is due 45 days after each quarter ends and only data accepted by the deadline is used.</p>

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseCsv, parseDate, parseHours } from './csv.ts'
 import { aggregateDays, dailyHprd, project, starEstimate, starFor, summarize, turnover } from './hprd.ts'
-import { classifyPay, classifySource, detect, importCensus, importPbj, importTimesheet, pseudonym } from './importer.ts'
+import { classifyPay, classifySource, detect, importCensus, importPbj, importTimesheet, isPbjXml, pbjXmlToRows, pseudonym } from './importer.ts'
+import { cmsStarInputs, toProvider } from './cms.ts'
+import { readFileSync } from 'node:fs'
 import { guessCode } from './jobcodes.ts'
 import { coreByWeekday, forecast, historyInputs, plan, planDay, shiftGapRows } from './planner.ts'
 import { readiness } from './readiness.ts'
@@ -274,4 +276,131 @@ test('the star estimate counts codes 5-12 even when targets use direct care', ()
   const direct = starFor(d, settings({ basis: 'direct' }))
   assert.equal(direct.adjusted.total, 4)
   assert.equal(direct.adjusted.rn, 1.2)
+})
+
+// ---------- Real public data and real export layouts ----------
+
+const fixture = (f: string) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8')
+
+test('real CMS PBJ quarter reproduces the HPRD Care Compare published for it', () => {
+  // CCN 015009, PBJ 2026Q2 public file (data.cms.gov). Care Compare October 2026 refresh reports
+  // 3.94651 total, 0.91121 RN, 0.53462 LPN, 2.50068 aide, 3.17630 weekend and 0.51974 weekend RN.
+  const rows = parseCsv(fixture('pbj-015009-2026Q2.csv'))
+  const det = detect(rows)!
+  assert.equal(det.kind, 'pbj')
+  const r = importPbj(rows, det.headerRow)
+  assert.equal(r.days.length, 91)
+  assert.equal(r.provider, '015009')
+  const sm = summarize(r.days, settings())
+  const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 5e-6, `${a} vs ${b}`)
+  close(sm.total.hprd, 3.94651); close(sm.rn.hprd, 0.91121); close(sm.lpn.hprd, 0.53462); close(sm.na.hprd, 2.50068)
+  close(sm.weekend.total.hprd, 3.1763); close(sm.weekend.rn.hprd, 0.51974)
+})
+
+test('2017-2019 PBJ files with lowercase headers import', () => {
+  const rows = parseCsv(fixture('pbj-2017Q1-lowercase.csv'))
+  const det = detect(rows)!
+  assert.equal(det.kind, 'pbj')
+  const r = importPbj(rows, det.headerRow)
+  assert.equal(r.skipped, 0)
+  assert.equal(r.days.length, 5)
+  assert.equal(r.days[0].date, '2017-01-01')
+  assert.equal(r.days[0].census, 55)
+  assert.equal(r.days[0].emp.rn, 9.27)
+  assert.equal(r.days[3].emp.rnAdmin, 29.75)
+  assert.equal(r.days[3].emp.lpnAdmin, 8.5)
+})
+
+test('a multi-facility PBJ file imports only the chosen CCN', () => {
+  const rows = parseCsv(fixture('pbj-015009-2026Q2.csv'))
+  const other = rows.slice(1, 4).map(r => ['015010', 'OTHER HOME', ...r.slice(2)])
+  const all = [...rows, ...other]
+  const none = importPbj(all, 0)
+  assert.equal(none.days.length, 0)
+  assert.equal(none.providers.length, 2)
+  assert.ok(none.issues.some(i => i.level === 'error'))
+  assert.equal(importPbj(all, 0, '015010').days.length, 3)
+  assert.equal(importPbj(all, 0, '015009').days.length, 91)
+})
+
+test('PBJ XML submission (XSD 4.10.0) flattens into timesheet rows', () => {
+  const xml = fixture('pbj-submission-v4.10.xml')
+  assert.ok(isPbjXml(xml))
+  const { rows, facilityId, quarter } = pbjXmlToRows(xml)
+  assert.equal(facilityId, 'SYN0001')
+  assert.equal(quarter, 'FY2027 Q1')
+  assert.equal(rows.length, 7)
+  const det = detect(rows)!
+  assert.equal(det.kind, 'timesheet')
+  const r = importTimesheet(rows, det)
+  assert.equal(r.issues.length, 0)
+  const agency = r.shifts.find(s => s.emp === 'AG-5512')!
+  assert.equal(agency.source, 'contract')
+  assert.equal(agency.code, 9)
+  const term = r.shifts.find(s => s.emp === '100871')!
+  assert.equal(term.term, '2026-10-02')
+  assert.equal(term.hire, '2024-08-05')
+  const days = aggregateDays(r.shifts, [{ date: '2026-10-01', census: 10, line: 2 }])
+  assert.equal(days[0].emp.rn, 7.5)
+  assert.equal(days[0].emp.rnAdmin, 4)
+  assert.equal(days[0].ctr.lpn, 12)
+  assert.equal(groupTotal(days[0]), 31.5) // housekeeping (code 33) is left out
+})
+const groupTotal = (d: Day) => Object.values(d.emp).reduce((a, b) => a + b, 0) + Object.values(d.ctr).reduce((a, b) => a + b, 0)
+
+test('UKG timecard detail: preamble, weekday dates, hh:mm, differentials and total rows', () => {
+  const rows = parseCsv(fixture('ukg-timecard-detail.csv'))
+  const det = detect(rows)!
+  assert.equal(det.kind, 'timesheet')
+  assert.equal(det.format, 'UKG / Kronos timecard export')
+  assert.equal(det.headerRow, 4)
+  const r = importTimesheet(rows, det)
+  assert.deepEqual(r.issues, [])
+  const days = aggregateDays(r.shifts, [])
+  const d4 = days.find(d => d.date === '2026-10-04')!, d5 = days.find(d => d.date === '2026-10-05')!
+  assert.equal(d4.emp.rn, 7.75) // the weekend differential repeats the same 7:45 and is not counted again
+  assert.equal(d4.emp.cna, 8)
+  assert.equal(d5.emp.rn, 12.25)
+  assert.equal(d5.ot!.rn, 4.25)
+  assert.equal(d5.emp.lpn, 8) // holiday worked counts
+  assert.equal(d5.emp.cna, 0) // PTO does not
+})
+
+test('differential and premium pay codes never add hours', () => {
+  for (const c of ['Shift Diff Night', 'Weekend Differential', 'Weekend Premium', 'Charge Pay', 'Bonus']) assert.equal(classifyPay(c), 'nonwork', c)
+  assert.equal(classifyPay('Overtime 1.5'), 'overtime')
+  assert.equal(classifyPay('OT Premium'), 'overtime')
+  assert.equal(classifyPay('1'), 'regular')
+  assert.equal(parseDate('Sun 10/04/2026'), '2026-10-04')
+  assert.equal(parseDate('Monday, 10/05/2026'), '2026-10-05')
+})
+
+test('census by payer is summed per day and its total rows are skipped', () => {
+  const rows = parseCsv(fixture('pcc-census-by-payer.csv'))
+  const det = detect(rows, 'census.csv')!
+  assert.equal(det.kind, 'census')
+  const r = importCensus(rows, det)
+  assert.deepEqual(r.census.map(c => [c.date, c.census]), [['2026-10-04', 94], ['2026-10-05', 94]])
+  assert.equal(r.issues.length, 0)
+})
+
+test('star estimate matches the published rating for a real facility', () => {
+  // CCN 015009, Care Compare October 2026: adjusted 4.01965 / 0.92810 / 3.23516, turnover 41.8% and 28.6%, 0 administrators left: 4 stars.
+  const e = starEstimate({ total: { hprd: 4.01965 } as never, rn: { hprd: 0.9281 } as never, weekend: { total: { hprd: 3.23516 } } as never, zeroRnDays: 0 },
+    { ...DEFAULT_STAR, totalTurnover: 41.8, rnTurnover: 28.6, adminDepartures: 0 })
+  // 70 + 80 + 30 + 35 + 45 (28.6 is 2/7 = 28.571 rounded) + 30
+  assert.equal(e.points, 290)
+  assert.equal(e.stars, 4)
+})
+
+test('missing turnover: footnote 26 scores lowest points, footnote 27 is dropped and rescaled', () => {
+  const sm = { total: { hprd: 3.95 } as never, rn: { hprd: 0.7 } as never, weekend: { total: { hprd: 3.3 } } as never, zeroRnDays: 0 }
+  const base = { ...DEFAULT_STAR, totalTurnover: 40, rnTurnover: null, adminDepartures: 0 }
+  // 70 + 70 + 30 + 40 + 30 = 240 of 330, rescaled to 276
+  assert.equal(starEstimate(sm, base).points, 276)
+  // RN turnover at the lowest 5 points instead: 245 of 380
+  assert.equal(starEstimate(sm, { ...base, lowest: ['rto'] }).points, 245)
+  const rec = (fn: string) => toProvider({ cms_certification_number_ccn: '015009', provider_name: 'X', total_nursing_staff_turnover: '', registered_nurse_turnover: '30', number_of_administrators_who_have_left_the_nursing_home: '', total_nursing_staff_turnover_footnote: fn, administrator_turnover_footnote: '27' } as never)
+  assert.deepEqual(cmsStarInputs(rec('26')).lowest, ['tto'])
+  assert.deepEqual(cmsStarInputs(rec('27')).lowest, [])
 })

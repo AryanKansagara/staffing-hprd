@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic PBJ submission written to the CMS NHPBJ XSD 4.10.0 layout. IDs and hours are made up. -->
+<nursingHomeData>
+  <header fileSpecVersion="4.10.0">
+    <facilityId>SYN0001</facilityId>
+    <stateCode>OH</stateCode>
+    <reportQuarter>1</reportQuarter>
+    <federalFiscalYear>2027</federalFiscalYear>
+    <softwareVendorName>Example Payroll</softwareVendorName>
+    <softwareProductName>Example PBJ Export</softwareProductName>
+    <softwareProductVersion>3.2</softwareProductVersion>
+  </header>
+  <employees>
+    <employee><employeeId>100234</employeeId><hireDate>2019-03-11</hireDate></employee>
+    <employee><employeeId>100871</employeeId><hireDate>2024-08-05</hireDate><terminationDate>2026-10-02</terminationDate></employee>
+    <employee><employeeId>AG-5512</employeeId><hireDate xsi:nil="true" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/></employee>
+  </employees>
+  <staffingHours processType="merge">
+    <staffHours>
+      <employeeId>100234</employeeId>
+      <workDays>
+        <workDay>
+          <date>2026-10-01</date>
+          <hourEntries>
+            <hourEntry><hours>7.50</hours><jobTitleCode>7</jobTitleCode><payTypeCode>2</payTypeCode></hourEntry>
+            <hourEntry><hours>4.00</hours><jobTitleCode>6</jobTitleCode><payTypeCode>2</payTypeCode></hourEntry>
+          </hourEntries>
+        </workDay>
+        <workDay>
+          <date>2026-10-02</date>
+          <hourEntries>
+            <hourEntry><hours>12.25</hours><jobTitleCode>7</jobTitleCode><payTypeCode>2</payTypeCode></hourEntry>
+          </hourEntries>
+        </workDay>
+      </workDays>
+    </staffHours>
+    <staffHours>
+      <employeeId>100871</employeeId>
+      <workDays>
+        <workDay>
+          <date>2026-10-01</date>
+          <hourEntries>
+            <hourEntry><hours>8.00</hours><jobTitleCode>10</jobTitleCode><payTypeCode>2</payTypeCode></hourEntry>
+          </hourEntries>
+        </workDay>
+      </workDays>
+    </staffHours>
+    <staffHours>
+      <employeeId>AG-5512</employeeId>
+      <workDays>
+        <workDay>
+          <date>2026-10-01</date>
+          <hourEntries>
+            <hourEntry><hours>12.00</hours><jobTitleCode>9</jobTitleCode><payTypeCode>3</payTypeCode></hourEntry>
+          </hourEntries>
+        </workDay>
+      </workDays>
+    </staffHours>
+    <staffHours>
+      <employeeId>200019</employeeId>
+      <workDays>
+        <workDay>
+          <date>2026-10-01</date>
+          <hourEntries>
+            <hourEntry><hours>8.00</hours><jobTitleCode>33</jobTitleCode><payTypeCode>2</payTypeCode></hourEntry>
+          </hourEntries>
+        </workDay>
+      </workDays>
+    </staffHours>
+  </staffingHours>
+</nursingHomeData>

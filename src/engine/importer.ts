@@ -2,7 +2,7 @@
 // Employee names are never kept: an ID column is used when present, otherwise the name is
 // hashed on this device and dropped.
 import { parseDate, parseHours } from './csv.ts'
-import { guessCode } from './jobcodes.ts'
+import { guessCode, JOB_CODES } from './jobcodes.ts'
 import { BUCKETS, zeroHours, type Bucket, type CensusRow, type Day, type PayKind, type Shift, type Source } from './types.ts'
 
 export type Kind = 'timesheet' | 'census' | 'pbj'
@@ -46,7 +46,8 @@ const SYN: Record<Field, string[]> = {
   hire: ['hire date', 'date of hire', 'start date', 'hiredate', 'original hire date'],
   term: ['term date', 'termination date', 'end date', 'separation date', 'terminationdate'],
   census: ['census', 'total census', 'residents', 'resident census', 'occupied', 'occupied beds', 'patient days', 'midnight census', 'census count', 'mdscensus', 'in house'],
-  unit: ['unit', 'floor', 'wing', 'nursing unit', 'station'],
+  // Census reports split by payer (Medicare A, Medicaid, private) are summed the same way as by unit.
+  unit: ['unit', 'floor', 'wing', 'nursing unit', 'station', 'payer', 'payor', 'payer type', 'pay source', 'payer class'],
 }
 
 function score(headers: string[], field: Field): number {
@@ -101,8 +102,11 @@ export function detect(rows: string[][], fileName = ''): Detected | null {
 export function classifyPay(v: string): PayKind {
   const s = v.toLowerCase().trim()
   if (!s) return 'regular'
-  if (/^(2)$/.test(s)) return 'regular'
-  if (/\bot\b|overtime|o\/t|time and a half|double ?time|\bdt\b|premium/.test(s)) return 'overtime'
+  if (/^[123]$/.test(s)) return 'regular'
+  // Differentials and premiums repeat hours already on a worked row (UKG/Kronos books them as separate
+  // pay codes), so counting them would double the hours. Treated like other non-worked pay.
+  if (/differential|\bdiff\b|shift prem|weekend prem|premium|charge pay|\bbonus\b/.test(s) && !/^(ot|overtime)\b/.test(s)) return 'nonwork'
+  if (/\bot\b|overtime|o\/t|time and a half|double ?time|\bdt\b/.test(s)) return 'overtime'
   if (/pto|vacation|sick|bereave|jury|leave|fmla|personal day|holiday(?! work)|benefit|bonus|severance|retro|on ?call(?! work)|standby|unpaid/.test(s)) return 'nonwork'
   return 'regular'
 }
@@ -121,6 +125,9 @@ export function pseudonym(name: string, salt: string): string {
   return 'N-' + h.toString(16).padStart(8, '0')
 }
 
+/** Report exports add subtotal rows ("Total" in the first column, or in the unit or name column). */
+const isTotalRow = (r: string[]) => /^(grand |sub)?total\b/i.test(r[0] ?? '') || r.some(c => /^(grand |sub)?totals?:?$/i.test(c))
+
 export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }> }
 
 export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>, titleMap: Record<string, number | null> = {}, salt = 'local'): TimesheetResult {
@@ -134,7 +141,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     const r = rows[i]
     const line = i + 1
     if (r.every(c => !c)) continue
-    if (/^(total|grand total|subtotal)/i.test(r[0] ?? '')) continue
+    if (isTotalRow(r)) continue
     const date = parseDate(get(r, 'date'))
     const hours = parseHours(get(r, 'hours'))
     if (!date) { issues.push({ line, level: 'error', message: `Unreadable date "${get(r, 'date')}"` }); skipped++; continue }
@@ -177,7 +184,7 @@ export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' |
   let skipped = 0
   for (let i = det.headerRow + 1; i < rows.length; i++) {
     const r = rows[i], line = i + 1
-    if (r.every(c => !c) || /^(total|grand total|average)/i.test(r[0] ?? '')) continue
+    if (r.every(c => !c) || isTotalRow(r) || /^average/i.test(r[0] ?? '')) continue
     const date = parseDate(r[m.date!] ?? '')
     const c = parseHours(r[m.census!] ?? '')
     if (!date) { issues.push({ line, level: 'error', message: `Unreadable date "${r[m.date!] ?? ''}"` }); skipped++; continue }
@@ -206,21 +213,66 @@ export function pbjRecordToDay(get: (col: string) => string | undefined): Day | 
   return { date, census: Number.isFinite(census) ? census : null, emp, ctr }
 }
 
-export function importPbj(rows: string[][], headerRow: number): { days: Day[]; issues: Issue[]; provider: string | null; skipped: number } {
+export interface PbjResult { days: Day[]; issues: Issue[]; provider: string | null; providers: { ccn: string; name: string; days: number }[]; skipped: number }
+
+/**
+ * The public PBJ Daily Nurse Staffing CSV. Headers are matched case-insensitively: the 2017-2019 files
+ * use lowercase names. State and national files hold many facilities; `ccn` picks one (by default the
+ * only one, otherwise nothing is imported until one is chosen).
+ */
+export function importPbj(rows: string[][], headerRow: number, ccn?: string | null): PbjResult {
   const h = rows[headerRow]
-  const idx = new Map(h.map((x, i) => [x.trim(), i]))
+  const idx = new Map(h.map((x, i) => [x.trim().toLowerCase(), i]))
+  const col = (r: string[], c: string) => { const j = idx.get(c.toLowerCase()); return j === undefined ? undefined : r[j] }
   const issues: Issue[] = []
-  const days: Day[] = []
-  const provs = new Set<string>()
+  const byProv = new Map<string, { name: string; days: Day[] }>()
   let skipped = 0
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
     if (r.every(c => !c)) continue
-    const d = pbjRecordToDay(col => { const j = idx.get(col); return j === undefined ? undefined : r[j] })
-    if (!d) { issues.push({ line: i + 1, level: 'error', message: 'Unreadable WorkDate' }); skipped++; continue }
-    provs.add(r[idx.get('PROVNUM') ?? 0])
-    days.push(d)
+    const d = pbjRecordToDay(c => col(r, c))
+    if (!d) { issues.push({ line: i + 1, level: 'error', message: `Unreadable WorkDate "${col(r, 'WorkDate') ?? ''}"` }); skipped++; continue }
+    const id = (col(r, 'PROVNUM') ?? '').padStart(6, '0')
+    const p = byProv.get(id) ?? { name: col(r, 'PROVNAME') ?? '', days: [] }
+    p.days.push(d)
+    byProv.set(id, p)
   }
-  if (provs.size > 1) issues.push({ line: headerRow + 1, level: 'warning', message: `File has ${provs.size} facilities; filter it to one CCN before importing` })
-  return { days: days.sort((a, b) => a.date.localeCompare(b.date)), issues, provider: provs.size === 1 ? [...provs][0] : null, skipped }
+  const providers = [...byProv].map(([c, p]) => ({ ccn: c, name: p.name, days: p.days.length })).sort((a, b) => a.name.localeCompare(b.name))
+  const pick = ccn && byProv.has(ccn) ? ccn : byProv.size === 1 ? providers[0].ccn : null
+  if (!pick && providers.length > 1) issues.push({ line: headerRow + 1, level: 'error', message: `File has ${providers.length} facilities; choose one by CCN` })
+  const days = pick ? byProv.get(pick)!.days : []
+  return { days: days.sort((a, b) => a.date.localeCompare(b.date)), issues, provider: pick, providers, skipped }
+}
+
+// ---------- PBJ XML (the quarterly submission file, NHPBJ XSD 4.10.0) ----------
+
+const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}\\b[^>]*?(?:/>|>([\\s\\S]*?)</${name}>)`))?.[1]?.trim() ?? ''
+const each = (xml: string, name: string) => [...xml.matchAll(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`, 'g'))].map(m => m[1])
+const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+
+export const isPbjXml = (text: string) => /<nursingHomeData\b/.test(text.slice(0, 4000))
+
+/**
+ * Flattens a PBJ XML submission into timesheet rows (one per hour entry) so it goes through the same
+ * mapping, validation and job-code checks as any other export. Hire and termination dates come from
+ * the employees section.
+ */
+export function pbjXmlToRows(text: string): { rows: string[][]; facilityId: string; quarter: string } {
+  const people = new Map<string, { hire: string; term: string }>()
+  for (const e of each(tag(text, 'employees'), 'employee')) people.set(unescape(tag(e, 'employeeId')), { hire: tag(e, 'hireDate'), term: tag(e, 'terminationDate') })
+  const rows: string[][] = [['Employee ID', 'PBJ job code', 'Job title', 'Pay type code', 'Work date', 'Hours', 'Hire date', 'Termination date']]
+  for (const sh of each(text, 'staffHours')) {
+    const id = unescape(tag(sh, 'employeeId'))
+    const p = people.get(id)
+    for (const wd of each(sh, 'workDay')) {
+      const date = tag(wd, 'date')
+      for (const he of each(wd, 'hourEntry')) {
+        const code = tag(he, 'jobTitleCode')
+        rows.push([id, code, JOB_CODES[+code] ?? `Job code ${code}`, tag(he, 'payTypeCode'), date, tag(he, 'hours'), p?.hire ?? '', p?.term ?? ''])
+      }
+    }
+  }
+  const h = tag(text, 'header')
+  const fy = tag(h, 'federalFiscalYear'), q = tag(h, 'reportQuarter')
+  return { rows, facilityId: tag(h, 'facilityId'), quarter: fy && q ? `FY${fy} Q${q}` : '' }
 }
