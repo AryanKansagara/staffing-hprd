@@ -10,11 +10,12 @@ Staffing is reported to CMS every quarter through the Payroll-Based Journal and 
 
 ## What it does
 
-- **Import** a time-clock export (UKG/Kronos timecard reports or any CSV) and a daily census (PointClickCare census report or any CSV). Format detection, editable column mapping, a validation report with line numbers, and job titles mapped to PBJ job codes. Employee names are dropped, or turned into a local pseudonym when an export has no ID.
+- **Import** a time-clock export (UKG/Kronos timecard reports or any CSV), the PBJ XML file you submit to CMS (XSD 4.10.0), the public CMS PBJ daily file (any year, one facility picked from state files) and a daily census (PointClickCare census report by unit or payer, or any CSV). Format detection, editable column mapping, a validation report with line numbers, and job titles mapped to PBJ job codes. Employee names are dropped, or turned into a local pseudonym when an export has no ID.
 - **Measure** hours per resident day by role the way CMS computes them (total hours over total resident days, PBJ codes 5 to 12, paid time off excluded), with a direct-care basis for state rules. Weekday versus weekend gaps, days below target, agency and contract share and cost, overtime, turnover, a quarter-to-date projection and a staffing star estimate using the current Technical Users' Guide cut points.
 - **Plan** the hours each role needs for a census forecast and the cheapest mix of open straight-time shifts, overtime and agency at your own rates, plus what closing each past gap would have cost.
 - **Act**: PBJ readiness checklist (unmapped codes, over-24-hour days, census gaps, days without RN hours, duplicates, CMS plausibility screens), a printable monthly report for QAPI, a shift-gap CSV for the scheduler, and monthly or quarterly snapshots with a compare view.
 - **Benchmark** against real public CMS data: search any US nursing home by name or CCN, load its Care Compare staffing figures, state and national averages and its latest PBJ daily staffing.
+- **Checked against real data**: importing the public 2026 Q2 PBJ file for CCN 015009 reproduces the HPRD Care Compare published for it to five decimals, and the star estimate gives the published staffing rating for 99.0% of the 14,214 rated facilities in the October 2026 refresh (the rest are mostly CMS one-star overrides). Fixtures are in `src/engine/fixtures`.
 - Editable targets with dated presets: the repealed 2024 federal rule (3.48 / 0.55 / 2.45 and RN 24/7) as a benchmark, New York, California, Florida and Illinois minimums, and the national average.
 - Works signed out (IndexedDB). Optional email sign-in syncs facility totals, settings and snapshots across devices; shift rows and employee IDs never leave the device.
 

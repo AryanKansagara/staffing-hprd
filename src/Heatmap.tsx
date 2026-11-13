@@ -58,7 +58,7 @@ export function Heatmap({ cells, target, label, onSelect, selected, unit = 'HPRD
 
   return (
     <div>
-      <div className="heat-months" aria-hidden="true">{grid.months.map((m, i) => <span key={i} style={{ left: `calc(${m.col} * (var(--cell, 15px) + 3px))` }}>{m.label}</span>)}</div>
+      <div className="heat-months" aria-hidden="true">{grid.months.map((m, i) => <span key={i} style={{ left: `calc(${m.col} * (var(--cell, 15px) + var(--gap, 3px)))` }}>{m.label}</span>)}</div>
       <div className="heat-wrap" ref={wrap}>
         <div className="heat-days" aria-hidden="true"><span /><span>Mon</span><span /><span>Wed</span><span /><span>Fri</span><span /></div>
         <div className="heat" role="grid" aria-label={`${label}: ${below} of ${valid} days below ${target.toFixed(2)} ${unit}`} onMouseLeave={() => setTip(null)}>
