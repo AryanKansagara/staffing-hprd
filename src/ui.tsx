@@ -290,7 +290,7 @@ export function Footer() {
       <div className="footer-inner">
         <div className="footer-brand"><Monogram /> <strong>Staffing HPRD</strong></div>
         <nav className="footer-nav" aria-label="Footer"><Link href="/app">Facilities</Link><Link href="/docs">Docs</Link><Link href="/docs#rules">Rules</Link><Link href="/docs#import">Export guides</Link><Link href="/settings">Settings</Link></nav>
-        <p>Built by Aryan Kansagara. Independent project, not affiliated with PointClickCare.</p>
+        <p>Built by Aryan Kansagara.</p>
         <p className="muted small">Sample facilities are synthetic. Facility data from CMS is public. Timesheets are processed in your browser and stay on this device. Not legal or compliance advice: your state agency and CMS publications govern.</p>
       </div>
     </footer>

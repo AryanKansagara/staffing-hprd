@@ -33,4 +33,4 @@ npm run build
 
 `/api/cms` is a small Vercel function that proxies the CMS Provider Data Catalog (which sends no CORS headers). The dev and preview servers serve it locally.
 
-Built by Aryan Kansagara. Independent project, not affiliated with PointClickCare.
+Built by Aryan Kansagara.
