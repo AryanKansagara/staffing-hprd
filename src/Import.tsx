@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { parseCsv } from './engine/csv.ts'
+import { delimiter, parseCsv } from './engine/csv.ts'
 import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, xmlProblem, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
 import { isNursing, JOB_CODES, SHORT_CODE } from './engine/jobcodes.ts'
 import type { CensusRow, Day, Shift } from './engine/types.ts'
@@ -36,11 +36,12 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
       if (/\.xml$/i.test(f.name)) { toast(`${f.name}: not a PBJ XML file (no nursingHomeData element).`, { tone: 'error' }); continue }
       let rows: string[][]
       try { rows = parseCsv(text) } catch (e) { toast(`${f.name}: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error', ttl: 10000 }); continue }
+      const decimalComma = delimiter(text) !== ','
       const det = detect(rows, f.name)
       if (!det) {
         // Unknown layout: let the user map it, starting as a timesheet.
-        next.push({ id: uuid(), file: f.name, rows, kind: 'timesheet', det: { kind: 'timesheet', format: 'Unrecognised CSV', headerRow: 0, headers: rows[0] ?? [], mapping: guessMapping(rows[0] ?? [], 'timesheet') } })
-      } else next.push({ id: uuid(), file: f.name, rows, det, kind: det.kind })
+        next.push({ id: uuid(), file: f.name, rows, kind: 'timesheet', det: { kind: 'timesheet', format: 'Unrecognised CSV', headerRow: 0, headers: rows[0] ?? [], mapping: guessMapping(rows[0] ?? [], 'timesheet'), decimalComma } })
+      } else next.push({ id: uuid(), file: f.name, rows, det: { ...det, decimalComma }, kind: det.kind })
     }
     setPending(p => [...p, ...next])
   }

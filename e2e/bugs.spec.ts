@@ -167,10 +167,17 @@ test.fail('#9 RN-less days in two quarters do not add up to one star', async ({ 
   await expect(page.getByText(/assigns one star/)).toHaveCount(0, { timeout: 3_000 })
 })
 
-test.fail('#10 a decimal comma is not ten times the hours', async ({ page }) => {
+test('#10 a decimal comma is not ten times the hours', async ({ page }) => {
   await newFacility(page)
   await pick(page, timesheet('E1,RN,10/05/2026,"7,5",REG,Employee'))
   await expect(panel(page, 'timesheet.csv')).toContainText('not a number', { timeout: 5_000 })
+})
+
+test('#10 a decimal comma in a semicolon file is read, -0:30 and hex are not hours', async ({ page }) => {
+  await newFacility(page)
+  const rows = ['E1,RN,10/05/2026,#,REG,Employee', 'E2,RN,10/05/2026,0x10,REG,Employee', 'E3,RN,10/05/2026,-0:30,REG,Employee']
+  await importFile(page, { name: 'semi.csv', text: timesheet(...rows).text.replaceAll(',', ';').replace('#', '7,5') })
+  expect((await stored(page)).days.map(worked)).toEqual([7.5])
 })
 
 test('#11 a PBJ file of another facility is not imported silently', async ({ page }) => {

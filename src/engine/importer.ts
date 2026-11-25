@@ -17,6 +17,8 @@ export interface Detected {
   headerRow: number
   headers: string[]
   mapping: Mapping
+  /** The file is not comma-delimited, so a comma in a number can be its decimal point. */
+  decimalComma?: boolean
 }
 
 export const FIELD_LABEL: Record<Field, string> = {
@@ -155,7 +157,7 @@ const isTotalRow = (r: string[]) => /^(grand |sub)?total\b/i.test(r[0] ?? '') ||
 
 export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }>; /** Rows whose ID cell held a name, replaced by a pseudonym. */ named: number }
 
-export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>, titleMap: Record<string, number | null> = {}, salt = 'local'): TimesheetResult {
+export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping' | 'decimalComma'>, titleMap: Record<string, number | null> = {}, salt = 'local'): TimesheetResult {
   const m = det.mapping
   const shifts: Shift[] = []
   const issues: Issue[] = []
@@ -169,7 +171,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     if (r.every(c => !c)) continue
     if (isTotalRow(r)) continue
     const date = parseDate(get(r, 'date'))
-    const hours = parseHours(get(r, 'hours'))
+    const hours = parseHours(get(r, 'hours'), det.decimalComma)
     if (!date) { issues.push({ line, level: 'error', message: `Unreadable date "${get(r, 'date')}"` }); skipped++; continue }
     if (hours === null) { issues.push({ line, level: 'error', message: `Hours "${get(r, 'hours')}" is not a number` }); skipped++; continue }
     if (hours < 0) { issues.push({ line, level: 'warning', message: `Negative hours (${hours}) skipped; PBJ needs the corrected total for the day` }); skipped++; continue }
@@ -206,7 +208,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
   return { shifts, issues, skipped, titles, named }
 }
 
-export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>): { census: CensusRow[]; issues: Issue[]; skipped: number } {
+export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping' | 'decimalComma'>): { census: CensusRow[]; issues: Issue[]; skipped: number } {
   const m = det.mapping
   const byDate = new Map<string, CensusRow>()
   const issues: Issue[] = []
@@ -215,7 +217,7 @@ export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' |
     const r = rows[i], line = i + 1
     if (r.every(c => !c) || isTotalRow(r) || /^average/i.test(r[0] ?? '')) continue
     const date = parseDate(r[m.date!] ?? '')
-    const c = parseHours(r[m.census!] ?? '')
+    const c = parseHours(r[m.census!] ?? '', det.decimalComma)
     if (!date) { issues.push({ line, level: 'error', message: `Unreadable date "${r[m.date!] ?? ''}"` }); skipped++; continue }
     if (c === null || c < 0) { issues.push({ line, level: 'error', message: `Census "${r[m.census!] ?? ''}" is not a count` }); skipped++; continue }
     const prev = byDate.get(date)
