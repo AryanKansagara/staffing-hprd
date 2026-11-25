@@ -9,14 +9,16 @@ import { GROUPS, type Basis, type Day, type Group, type Rates, type Targets } fr
 export type Option = 'prn' | 'ot' | 'agency'
 export const OPTION_LABEL: Record<Option, string> = { prn: 'Open straight-time shift', ot: 'In-house overtime', agency: 'Agency' }
 
-export interface PlanDayInput { date: string; census: number; core: Record<Group, number> }
+/** Hours by group; `other` is already worked or scheduled and counts toward the total only. */
+export type Core = Record<Group, number> & { other?: number }
+export interface PlanDayInput { date: string; census: number; core: Core }
 
 export interface PlanDay {
   date: string
   census: number
   weekend: boolean
   required: Record<Group | 'total', number>
-  core: Record<Group, number>
+  core: Core
   fill: Record<Group, Record<Option, number>>
   cost: number
   /** What the same hours would cost if agency covered all of them. */
@@ -80,7 +82,7 @@ export function planDay(input: PlanDayInput, t: Targets, r: Rates, opts: PlanOpt
     if (have.rn < rnReq) short.rn += add(['rn'], rnReq - have.rn)
     if (have.na < naReq) short.na += add(['na'], naReq - have.na)
     if (have.rn + have.lpn < licReq) short.lpn += add(['lpn', 'rn'], licReq - have.rn - have.lpn)
-    const tot = have.rn + have.lpn + have.na
+    const tot = have.rn + have.lpn + have.na + (have.other ?? 0)
     if (tot < totReq) short.na += add(['na', 'lpn', 'rn'], totReq - tot)
   }
   let cost = 0, agencyOnlyCost = 0
@@ -106,19 +108,21 @@ export function plan(inputs: PlanDayInput[], t: Targets, r: Rates, opts: PlanOpt
 
 /** History as planner input: what was actually worked becomes the core, so the plan prices each missed day. */
 export const historyInputs = (days: Day[], basis: Basis): PlanDayInput[] =>
-  days.filter(d => d.census && d.census > 0).map(d => { const h = groupHours(d, basis); return { date: d.date, census: d.census!, core: { rn: h.rn, lpn: h.lpn, na: h.na } } })
+  days.filter(d => d.census && d.census > 0).map(d => { const h = groupHours(d, basis); return { date: d.date, census: d.census!, core: { rn: h.rn, lpn: h.lpn, na: h.na, other: h.other } } })
 
 /** The core in-house schedule by weekday: average employee straight-time hours over the last `weeks` weeks. Agency and overtime are left out on purpose: they are what the plan re-decides. */
-export function coreByWeekday(days: Day[], basis: Basis, weeks = 4): Record<Group, number>[] {
+export function coreByWeekday(days: Day[], basis: Basis, weeks = 4): (Core & { other: number })[] {
   const tail = days.slice(-weeks * 7)
-  const sum = Array.from({ length: 7 }, () => ({ rn: 0, lpn: 0, na: 0, n: 0 }))
+  const sum = Array.from({ length: 7 }, () => ({ rn: 0, lpn: 0, na: 0, other: 0, n: 0 }))
   for (const d of tail) {
     const w = sum[dow(d.date)]
     w.n++
     const counted = groupHours({ ...d, ctr: { rnDon: 0, rnAdmin: 0, rn: 0, lpnAdmin: 0, lpn: 0, cna: 0, naTrn: 0, medAide: 0 } }, basis)
     for (const g of GROUPS) w[g] += Math.max(0, counted[g] - (d.ot?.[g] ?? 0))
+    // Overtime is known per group, not per code: what the counted aides did not work was medication aides'.
+    w.other += Math.max(0, counted.other - Math.max(0, (d.ot?.na ?? 0) - counted.na))
   }
-  return sum.map(w => ({ rn: w.n ? w.rn / w.n : 0, lpn: w.n ? w.lpn / w.n : 0, na: w.n ? w.na / w.n : 0 }))
+  return sum.map(w => ({ rn: w.n ? w.rn / w.n : 0, lpn: w.n ? w.lpn / w.n : 0, na: w.n ? w.na / w.n : 0, other: w.n ? w.other / w.n : 0 }))
 }
 
 /** Census forecast: the trailing 28-day average by weekday, or a flat override. */

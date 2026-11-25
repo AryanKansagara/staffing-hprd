@@ -47,9 +47,9 @@ export interface Shift {
 
 export interface CensusRow { date: string; census: number; line: number }
 
-/** Which PBJ codes count toward HPRD. Care Compare counts 5-12. Some state rules count direct care only; New York of that only RNs, LPNs and certified aides. */
-export type Basis = 'cms' | 'direct' | 'ny'
-export const BASIS_LABEL: Record<Basis, string> = { cms: 'PBJ 5-12', direct: 'Direct care', ny: 'RN, LPN, CNA (New York)' }
+/** Which PBJ codes count toward HPRD. Care Compare counts 5-12. Some state rules count direct care only; New York of that only RNs, LPNs and certified aides; Florida counts medication aides in the total but not as aides. */
+export type Basis = 'cms' | 'direct' | 'ny' | 'fl'
+export const BASIS_LABEL: Record<Basis, string> = { cms: 'PBJ 5-12', direct: 'Direct care', ny: 'RN, LPN, CNA (New York)', fl: 'Direct care (Florida)' }
 
 export interface Targets {
   total: number | null
