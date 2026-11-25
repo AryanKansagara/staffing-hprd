@@ -100,6 +100,19 @@ export function detect(rows: string[][], fileName = ''): Detected | null {
   return null
 }
 
+// Hours that PBJ never counts (Policy Manual v2.7, 2.2 c, d and j): leave, meals, and training off the floor.
+const LEAVE = /\b(vac(ation)?s?|hol(iday)?s?|sick?|sck|brv|jd|pto\w*|eto|pdo|eib|esl|psl|loa|uto|vto|lwop)\b|time off|earned time|absen|disabilit|work(er)?.?s? comp|military|suspen|non ?-?prod|\bmeals?\b|\blunch\b|\btraining\b|in-?service|\beducation\b/
+/** A missed meal was worked through, and a holiday or on-call shift that was worked counts. */
+const WORKED_ANYWAY = /(?<!not |non-|non )\b(work(ed)?|wrk|wkd)\b(?!.?s? comp)|missed meal|no meal|no lunch/
+/** Pay codes that plainly mean worked time. Anything else unrecognised is counted but reported. */
+const WORKED = /^[123]$|^(reg(ular)?|r|hourly|hours|straight( time)?|st|base|standard|productive|prod|salary|salaried|exempt|non-?exempt|days?|eve(ning)?s?|nights?|noc|am|pm|weekend|shift|agency|contract|prn|per ?diem|call ?back)\b|\b(work(ed)?|wrk|wkd|regular|reg)\b/
+
+/** Whether a pay code is one this importer knows, rather than counted as worked by default. */
+export function knownPay(v: string): boolean {
+  const s = v.toLowerCase().trim()
+  return !s || classifyPay(v) !== 'regular' || WORKED.test(s) || WORKED_ANYWAY.test(s)
+}
+
 export function classifyPay(v: string): PayKind {
   const s = v.toLowerCase().trim()
   if (!s) return 'regular'
@@ -108,6 +121,8 @@ export function classifyPay(v: string): PayKind {
   // pay codes), so counting them would double the hours. Treated like other non-worked pay.
   if (/differential|\bdiff\b|shift prem|weekend prem|premium|charge pay|\bbonus\b/.test(s) && !/^(ot|overtime)\b/.test(s)) return 'nonwork'
   if (/\bot\b|overtime|o\/t|time and a half|double ?time|\bdt\b/.test(s)) return 'overtime'
+  if (WORKED_ANYWAY.test(s) && LEAVE.test(s)) return 'regular'
+  if (LEAVE.test(s)) return 'nonwork'
   if (/pto|vacation|sick|bereave|jury|leave|fmla|personal day|holiday(?! work)|benefit|bonus|severance|retro|on ?call(?! work)|standby|unpaid/.test(s)) return 'nonwork'
   return 'regular'
 }
@@ -146,6 +161,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
   const issues: Issue[] = []
   const titles = new Map<string, { count: number; code: number | null }>()
   let skipped = 0, named = 0
+  const unknownPay = new Map<string, { n: number; line: number }>()
   const get = (r: string[], f: Field) => m[f] === undefined ? '' : (r[m[f]!] ?? '')
   for (let i = det.headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
@@ -177,6 +193,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     titles.set(key, t)
     const payRaw = get(r, 'pay')
     const pay = classifyPay(payRaw)
+    if (!knownPay(payRaw)) { const u = unknownPay.get(payRaw) ?? { n: 0, line }; u.n++; unknownPay.set(payRaw, u) }
     const source = classifySource(get(r, 'source'), payRaw === '3' ? 'contract' : '')
     const s: Shift = { emp, code, title: key, date, hours, pay, source, line }
     const hire = parseDate(get(r, 'hire')), term = parseDate(get(r, 'term'))
@@ -184,6 +201,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     if (term) s.term = term
     shifts.push(s)
   }
+  for (const [p, u] of unknownPay) issues.push({ line: u.line, level: 'warning', message: `Pay code "${p}" is not recognised: ${u.n} ${u.n === 1 ? 'row' : 'rows'} counted as worked hours. Remove them from the file if it is leave.` })
   if (rows.length - det.headerRow - 1 <= 0) issues.push({ line: det.headerRow + 1, level: 'error', message: 'No data rows under the header' })
   return { shifts, issues, skipped, titles, named }
 }
