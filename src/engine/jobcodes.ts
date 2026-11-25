@@ -49,8 +49,11 @@ export const SHORT_CODE: Record<number, string> = { 5: 'RN DON', 6: 'RN admin', 
 export const isNursing = (c: number | null) => c !== null && c >= 5 && c <= 12
 
 // Order matters: the first rule that matches wins, so specific titles come before generic ones.
-const RULES: [RegExp, number][] = [
-  [/\b(d\.?o\.?n|director of nursing|dir(ector)?\.? nurs)/i, 5],
+const RULES: [RegExp, number | null][] = [
+  // Hours of hospice staff and private duty nurses shall not be reported (PBJ Policy Manual v2.8, 2.2 f).
+  [/\bhospice\b|\bprivate[ -]?duty\b/i, null],
+  [/\b(assistant|asst|associate|assoc)\b[.,]?\s*(d\.?o\.?n(?![a-z])|dir(ector)?\b[.,]?\s*(of\s+)?nurs)|\ba\.d\.o\.n(?![a-z])/i, 6],
+  [/\b(d\.?o\.?ns?(?![a-z])|director of nursing|dir(ector)?\.? nurs)/i, 5],
   [/\bnursing home admin|\badministrator\b|\bnha\b|executive director/i, 1],
   [/medical director/i, 2],
   [/\b(nurse practitioner|aprn|np)\b/i, 13],
