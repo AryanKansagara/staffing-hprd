@@ -237,10 +237,17 @@ test('#13 a negative case-mix factor does not break the facility', async ({ page
   await tab(page, path, 'overview')
 })
 
-test.fail('#14 an assistant director of nursing is code 6', async ({ page }) => {
+test('#14 an assistant director of nursing is code 6', async ({ page }) => {
   await newFacility(page)
   await importFile(page, timesheet('E1,Assistant Director of Nursing,10/05/2026,8,REG,Employee'))
   expect((await stored(page)).days[0].emp.rnAdmin).toBe(8)
+})
+
+test('#14 hospice and private duty staff have no code and no hours', async ({ page }) => {
+  await newFacility(page)
+  await importFile(page, timesheet('E1,Hospice RN,10/05/2026,8,REG,Agency', 'E2,Private Duty CNA,10/05/2026,8,REG,Agency', 'E3,RN,10/05/2026,8,REG,Employee'))
+  await expect(page.getByText('2 unmapped')).toBeVisible()
+  expect((await stored(page)).days.map(worked)).toEqual([8])
 })
 
 test.fail('#15 cost per resident day uses the days that have a census', async ({ page }) => {
