@@ -20,6 +20,9 @@ export interface Check {
 
 export interface Readiness { quarter: string; deadline: string; daysLeft: number; checks: Check[]; errors: number; warnings: number }
 
+/** Two decimals, or as many as it takes to show that the value is above the limit. */
+const above = (v: number, limit: number) => [2, 3, 4, 5, 6, 7, 8, 9].map(n => v.toFixed(n)).find(t => +t > limit) ?? String(v)
+
 const cap = <T,>(xs: T[]) => xs.slice(0, 50)
 
 export function readiness(days: Day[], shifts: Shift[] | null, census: CensusRow[] | null, today: string, quarter?: string): Readiness {
@@ -101,16 +104,24 @@ export function readiness(days: Day[], shifts: Shift[] | null, census: CensusRow
     detail: zeroRn.length ? `${zeroRn.length} day(s) with residents and no RN hours (codes 5-7). Four or more in a quarter is an automatic one-star staffing rating.` : 'Every day with residents has RN hours.',
     items: cap(zeroRn.map(d => ({ text: `${d.date}${isWeekend(d.date) ? ' (weekend)' : ''}: census ${d.census}` }))),
   })
-  // 9. Plausibility exclusions CMS applies
-  const tot = inQ.reduce((a, d) => a + groupHours(d, 'cms').total, 0), res = inQ.reduce((a, d) => a + (d.census ?? 0), 0)
-  const na = inQ.reduce((a, d) => a + groupHours(d, 'cms').na, 0)
-  const we = inQ.filter(d => isWeekend(d.date))
-  const weTot = we.reduce((a, d) => a + groupHours(d, 'cms').total, 0)
+  // 9. The exclusions CMS applies, over days with at least one resident (Technical Users' Guide, September 2026, p. 11)
   const implausible: { text: string }[] = []
-  if (res && tot / res > 12) implausible.push({ text: `Total nurse HPRD ${(tot / res).toFixed(2)} is above 12` })
-  if (res && na / res > 5.25) implausible.push({ text: `Nurse aide HPRD ${(na / res).toFixed(2)} is above 5.25` })
-  if (we.length && weTot === 0) implausible.push({ text: 'No nurse hours on any weekend day' })
-  push({ id: 'plausible', level: implausible.length ? 'error' : 'ok', title: 'Passes CMS plausibility screens', detail: implausible.length ? 'CMS treats these as invalid and shows staffing as "Not Available".' : 'Within CMS limits (12 total, 5.25 aide HPRD, weekend hours present).', items: implausible })
+  const res = inQ.filter(d => d.census && d.census > 0), we = res.filter(d => isWeekend(d.date))
+  for (const [on, days] of [['', res], [' on weekend days', we]] as const) {
+    if (!days.length) continue
+    const sum = (f: (d: Day) => number) => days.reduce((a, d) => a + f(d), 0)
+    const census = sum(d => d.census!), tot = sum(d => groupHours(d, 'cms').total) / census, na = sum(d => groupHours(d, 'cms').na) / census
+    if (tot === 0) implausible.push({ text: `No nurse hours${on || ' on any day with residents'}` })
+    if (tot > 12 + 1e-9) implausible.push({ text: `Total nurse HPRD${on} ${above(tot, 12)} is above 12` })
+    if (na > 5.25 + 1e-9) implausible.push({ text: `Nurse aide HPRD${on} ${above(na, 5.25)} is above 5.25` })
+  }
+  push({
+    id: 'plausible', level: implausible.length ? 'error' : res.length ? 'ok' : 'warning', title: res.length ? 'Passes CMS plausibility screens' : 'CMS plausibility screens not checked',
+    detail: implausible.length ? 'CMS treats these as invalid and shows staffing as "Not Available".'
+      : !res.length ? 'No day in the quarter has both hours and a census.'
+      : `Within CMS limits on days with residents: hours above 0, at most 12 total and 5.25 aide HPRD, ${we.length ? 'over all days and over weekend days' : 'over all days. No weekend day to check yet'}.`,
+    items: implausible, count: res.length ? implausible.length : 1,
+  })
 
   const errors = checks.filter(c => c.level === 'error').length
   const warnings = checks.filter(c => c.level === 'warning').length
