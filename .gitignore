@@ -4,3 +4,8 @@ dist
 *.tsbuildinfo
 .env.local
 .env
+
+# Playwright
+/test-results
+/playwright-report
+/blob-report
