@@ -3,7 +3,7 @@
 import { addDays, daysBetween, isWeekend } from './csv.ts'
 import { isNursing } from './jobcodes.ts'
 import { CUT_RN, CUT_RN_TURNOVER, CUT_TOTAL, CUT_TOTAL_TURNOVER, CUT_WEEKEND, quarterOf, quarterRange, STAR_POINTS } from './rules.ts'
-import { BUCKET_GROUP, BUCKETS, CODE_BUCKET, GROUPS, zeroHours, type Basis, type CensusRow, type Day, type Group, type Rates, type Settings, type Shift, type StarInputs, type Targets, type TurnoverKey } from './types.ts'
+import { BUCKET_GROUP, BUCKETS, CODE_BUCKET, GROUPS, zeroHours, type Basis, type Bucket, type CensusRow, type Day, type Group, type Rates, type Settings, type Shift, type StarInputs, type Targets, type TurnoverKey } from './types.ts'
 
 // ---------- Aggregation ----------
 
@@ -36,7 +36,10 @@ const COUNTS: Record<Basis, Record<string, boolean>> = {
   cms: { rnDon: true, rnAdmin: true, rn: true, lpnAdmin: true, lpn: true, cna: true, naTrn: true, medAide: true },
   // Direct care: DON and administrative nurse hours are left out, as several state rules require.
   direct: { rnDon: false, rnAdmin: false, rn: true, lpnAdmin: false, lpn: true, cna: true, naTrn: true, medAide: true },
+  // PHL 2895-b(3)(b): since 2023 a certified nurse aide or a licensed nurse, not performing administrative services.
+  ny: { rnDon: false, rnAdmin: false, rn: true, lpnAdmin: false, lpn: true, cna: true, naTrn: false, medAide: false },
 }
+export const counts = (basis: Basis, b: Bucket) => COUNTS[basis][b]
 
 export interface GroupHours { rn: number; lpn: number; na: number; total: number }
 

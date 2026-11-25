@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { TABS, type Tab } from './App.tsx'
 import { toCsv } from './engine/csv.ts'
-import { dailyHprd, MEASURE_LABEL, misses, project as projectQ, starFor, summarize, type Measure, type Summary } from './engine/hprd.ts'
+import { counts, dailyHprd, MEASURE_LABEL, misses, project as projectQ, starFor, summarize, type Measure, type Summary } from './engine/hprd.ts'
 import { SHORT_CODE } from './engine/jobcodes.ts'
 import { readiness } from './engine/readiness.ts'
 import { PRESETS, presetById, quarterOf, quarterRange } from './engine/rules.ts'
-import { BUCKET_CODE, BUCKETS, type Basis, type Day, type Settings, type Targets } from './engine/types.ts'
+import { BASIS_LABEL, BUCKET_CODE, BUCKETS, type Basis, type Day, type Settings, type Targets } from './engine/types.ts'
 import { HeatLegend, Heatmap, type HeatCell } from './Heatmap.tsx'
 import { useProject } from './projectData.ts'
 import type { Dataset, Project } from './store.ts'
@@ -140,9 +140,8 @@ export function TargetsBar({ s, onChange }: { s: Settings; onChange: (p: Partial
       {field('licensed', 'Licensed HPRD')}
       {field('na', 'Aide HPRD')}
       <label className="field"><span>Counting</span>
-        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses.">
-          <option value="cms">PBJ 5-12</option>
-          <option value="direct">Direct care</option>
+        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses. New York also leaves out aides in training and medication aides.">
+          {(Object.keys(BASIS_LABEL) as Basis[]).map(b => <option key={b} value={b}>{BASIS_LABEL[b]}</option>)}
         </select>
       </label>
       <label className="toggle" style={{ alignSelf: 'center', paddingTop: 18 }}><input type="checkbox" checked={s.targets.rn24} onChange={e => set({ rn24: e.target.checked })} /><span className="small"><b>RN 24/7</b></span></label>
@@ -310,7 +309,7 @@ function Daily({ c }: { c: Ctx }) {
             <table>
               <thead><tr><th>PBJ code</th><th className="num">Employee h</th><th className="num">Agency/contract h</th><th className="num">HPRD</th><th>Counts toward</th></tr></thead>
               <tbody>{BUCKETS.map(b => (
-                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{s.basis === 'direct' && ['rnDon', 'rnAdmin', 'lpnAdmin'].includes(b) ? 'Excluded (direct care basis)' : 'Total and role HPRD'}</td></tr>
+                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{!counts(s.basis, b) ? `Excluded (${BASIS_LABEL[s.basis]} basis)` : 'Total and role HPRD'}</td></tr>
               ))}</tbody>
             </table>
           </div>
