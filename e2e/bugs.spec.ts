@@ -148,13 +148,22 @@ test('#7 New York leaves out aides in training; Care Compare counting does not',
   await expect(bar.getByLabel('Counting')).toHaveValue('direct')
 })
 
-test.fail('#8 hours without a census do not fail the plausibility screen', async ({ page }) => {
+test('#8 hours without a census do not fail the plausibility screen', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, timesheet(...Array.from({ length: 4 }, (_, i) => `E1,RN,10/0${i + 1}/2026,20,REG,Employee`)))
   await importFile(page, census('10/01/2026,5'))
   await tab(page, path, 'pbj')
   await expect(page.getByText('Passes CMS plausibility screens')).toBeVisible()
   await expect(page.getByText(/is above 12/)).toHaveCount(0, { timeout: 3_000 })
+})
+
+test('#8 the weekend screens', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, timesheet('E1,RN,10/02/2026,8,REG,Employee', 'E2,CNA,10/03/2026,12.5,REG,Employee', 'E3,CNA,10/03/2026,12.5,REG,Employee'))
+  await importFile(page, census('10/02/2026,10', '10/03/2026,2'))
+  await tab(page, path, 'pbj')
+  await expect(page.getByText('Total nurse HPRD on weekend days 12.50 is above 12')).toBeVisible()
+  await expect(page.getByText('Nurse aide HPRD on weekend days 12.50 is above 5.25')).toBeVisible()
 })
 
 test('#9 RN-less days in two quarters do not add up to one star', async ({ page }) => {

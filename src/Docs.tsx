@@ -131,7 +131,7 @@ export default function Docs() {
             <li><b>Shifts over 16 hours</b>, <b>duplicate rows</b>: allowed, but audited. Review before submitting.</li>
             <li><b>Census gaps</b>: days without a census cannot be measured here (CMS uses MDS, but gaps usually mean missing discharge or admission records too).</li>
             <li><b>Days without RN hours</b>: four or more in a quarter means a one-star staffing rating.</li>
-            <li><b>Plausibility</b>: CMS hides staffing for quarters above 12 total or 5.25 aide HPRD, or with zero weekend hours.</li>
+            <li><b>Plausibility</b>: CMS hides staffing for quarters with zero nurse hours, above 12 total HPRD or above 5.25 aide HPRD, each over all days and over weekend days, counting only days with at least one resident (Technical Users’ Guide, September 2026, p. 11).</li>
           </ul>
 
           <h2 id="planner">Planner method</h2>
