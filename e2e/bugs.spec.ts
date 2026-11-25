@@ -3,13 +3,24 @@ import { test, expect, census, csv, fixtureFile, HAND, HAND_CENSUS, importFile, 
 
 // Open bugs, pinned. Each becomes a normal test in the pull request that fixes it.
 
-test.fail('#2 a census over PBJ days keeps their hours', async ({ page }) => {
+test('#2 a census over PBJ days keeps their hours', async ({ page }) => {
   await newFacility(page)
   await importFile(page, pbjFile())
   const before = worked((await stored(page)).days[0])
   await importFile(page, census('04/01/2026,50'))
   const d = (await stored(page)).days[0]
   expect([d.census, worked(d)]).toEqual([50, before])
+})
+
+test('#2 remapping a title keeps PBJ days, and excluding it drops its hours', async ({ page }) => {
+  await newFacility(page)
+  await importFile(page, pbjFile())
+  await importFile(page, HAND)
+  const sum = async (from: string) => (await stored(page)).days.filter(d => d.date >= from).reduce((a, d) => a + worked(d), 0)
+  const all = await sum('2026-04-01')
+  await page.getByLabel('PBJ code for CNA').selectOption('')
+  await expect.poll(() => sum('2026-10-01')).toBe(40) // 100 less 60 aide hours
+  expect(await sum('2026-04-01')).toBeCloseTo(all - 60, 6)
 })
 
 test.fail('#3 a name in a column called Employee is not stored', async ({ page }) => {

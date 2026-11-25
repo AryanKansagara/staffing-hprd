@@ -2,8 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { parseCsv } from './engine/csv.ts'
 import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
 import { isNursing, JOB_CODES, SHORT_CODE } from './engine/jobcodes.ts'
-import type { CensusRow, Shift } from './engine/types.ts'
-import { mergeDays, rebuild, sampleData } from './projectData.ts'
+import type { CensusRow, Day, Shift } from './engine/types.ts'
+import { mergeDays, rebuild, sampleData, withoutCensus } from './projectData.ts'
 import { getPrefs, putData, saveProject, uuid, type Dataset, type Project } from './store.ts'
 import { ask, download, fmtDay, Link, plural, toast } from './ui.tsx'
 
@@ -137,7 +137,7 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
     setBusy(true)
     try {
       const salt = getPrefs().salt
-      let shifts: Shift[] = ds.shifts, census: CensusRow[] = ds.census, days = project.days, rows = 0, skipped = 0, errors = 0
+      let shifts: Shift[] = ds.shifts, census: CensusRow[] = ds.census, days = project.days, pbjDays: Day[] = [], rows = 0, skipped = 0, errors = 0
       if (p.kind === 'timesheet') {
         const r = importTimesheet(p.rows, det, project.titleMap, salt)
         const [a, b] = range!
@@ -152,13 +152,17 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
         rows = r.census.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       } else {
         const r = importPbj(p.rows, p.det.headerRow, ccn)
+        pbjDays = r.days
         days = mergeDays(project.days, r.days)
         rows = r.days.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       }
       const meta = { id: uuid(), kind: p.kind, fileName: p.file, format: p.det.format, rows, skipped, errors, at: Date.now(), from: range?.[0], to: range?.[1] }
       const base = { ...project, days, imports: [...project.imports, meta] }
-      if (p.kind === 'pbj') await saveProject(base)
-      else await rebuild(base, { shifts, census })
+      if (p.kind === 'pbj') {
+        const rest = withoutCensus(ds, pbjDays)
+        if (rest.census.length < ds.census.length) await putData(project.id, rest)
+        await saveProject(base)
+      } else await rebuild(base, { shifts, census })
       toast(`Imported ${plural(rows, p.kind === 'timesheet' ? 'shift row' : 'day')} from ${p.file}`, { tone: 'ok' })
       onDone()
     } catch (e) {
