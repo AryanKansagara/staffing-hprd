@@ -224,7 +224,7 @@ test('#11 a CCN saved without its leading zero is found in a state file', async 
   expect((await stored(page)).days).toHaveLength(91)
 })
 
-test.fail('#12 the issue list holds every duplicate row', async ({ page }) => {
+test('#12 the issue list holds every duplicate row', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, timesheet(...Array.from({ length: 121 }, () => 'E1,CNA,10/02/2026,0.1,REG,Employee')))
   await importFile(page, HAND_CENSUS)
@@ -232,6 +232,8 @@ test.fail('#12 the issue list holds every duplicate row', async ({ page }) => {
   const dl = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download issue list' }).click()
   expect((await readFile(await (await dl).path(), 'utf8')).match(/Same as line/g)).toHaveLength(120)
+  await expect(page.getByText(/^line \d+Same as line/)).toHaveCount(50)
+  await expect(page.getByText('and 70 more in the issue list')).toBeVisible()
 })
 
 test('#13 a negative case-mix factor does not break the facility', async ({ page }) => {
