@@ -1,8 +1,13 @@
+/** The character between cells: whichever of comma, tab and semicolon is most frequent on the first line. */
+export const delimiter = (text: string) => {
+  const first = text.replace(/^﻿/, '').split('\n', 1)[0]
+  return [',', '\t', ';'].map(d => [d, first.split(d).length] as const).sort((a, b) => b[1] - a[1])[0][0]
+}
+
 /** RFC 4180-ish CSV parser: quoted fields, escaped quotes, CRLF, and tab or semicolon delimiters. Throws when a quote is never closed: the rest of the file would be lost inside it. */
 export function parseCsv(text: string): string[][] {
   const src = text.replace(/^﻿/, '')
-  const first = src.split('\n', 1)[0]
-  const delim = [',', '\t', ';'].map(d => [d, first.split(d).length] as const).sort((a, b) => b[1] - a[1])[0][0]
+  const delim = delimiter(text)
   const rows: string[][] = []
   let row: string[] = [], field = '', q = false, line = 1, opened = 1
   for (let i = 0; i < src.length; i++) {
@@ -50,14 +55,20 @@ export function parseDate(s: string): string | null {
   return new Date(iso + 'T00:00:00Z').toISOString().slice(0, 10) === iso ? iso : null
 }
 
-/** Hours as decimals ("7.5"), clock durations ("7:30") or with units ("8.0 hrs"). */
-export function parseHours(s: string): number | null {
+/**
+ * Hours as decimals ("7.5"), clock durations ("7:30") or with units ("8.0 hrs"). Commas are thousands groups
+ * ("1,234.5"). `decimalComma`, for files not delimited by commas, also reads "7,5"; "1,234" could then be either and is refused.
+ */
+export function parseHours(s: string, decimalComma = false): number | null {
   const t = s.trim().replace(/hrs?|hours?/i, '').trim()
   if (!t) return null
-  const hm = t.match(/^(-?\d+):(\d{2})$/)
-  if (hm) return +hm[1] + (+hm[1] < 0 ? -1 : 1) * +hm[2] / 60
-  const n = Number(t.replace(/,/g, ''))
-  return Number.isFinite(n) ? n : null
+  const hm = t.match(/^(-?)(\d+):([0-5]\d)$/)
+  if (hm) return (hm[1] ? -1 : 1) * (+hm[2] + +hm[3] / 60)
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(t)) return +t
+  const grouped = /^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d*)?$/.test(t)
+  const decimal = decimalComma && /^[+-]?\d*,\d+$/.test(t)
+  if (grouped && decimal) return null
+  return grouped ? +t.replace(/,/g, '') : decimal ? +t.replace(',', '.') : null
 }
 
 export const addDays = (date: string, n: number) => new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10)
