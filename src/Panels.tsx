@@ -148,6 +148,9 @@ export function Planner({ c }: { c: Ctx }) {
 
 // ---------- PBJ readiness ----------
 
+/** Rows listed under a check; the download has all of them. */
+const SHOWN = 50
+
 export function Pbj({ c, r }: { c: Ctx; r: Readiness }) {
   const { project, ds } = c
   const exportIssues = () => download(`${slug(project.name)}-pbj-issues-${r.quarter}.csv`, toCsv([['check', 'level', 'source_line', 'detail'], ...r.checks.filter(x => x.level !== 'ok').flatMap(x => x.items.map(i => [x.title, x.level, i.line ?? '', i.text]))]))
@@ -170,7 +173,7 @@ export function Pbj({ c, r }: { c: Ctx; r: Readiness }) {
             <div>
               <h3>{ch.title} <span className="sr">({ch.level === 'ok' ? 'passed' : ch.level})</span>{ch.level !== 'ok' && <span className={`chip ${ch.level === 'error' ? 'bad' : 'warn'}`} style={{ marginLeft: 8 }}>{ch.count}</span>}</h3>
               <p className="muted small" style={{ margin: 0 }}>{ch.detail}</p>
-              {ch.items.length > 0 && ch.level !== 'ok' && <ul>{ch.items.map((i, k) => <li key={k}>{i.line ? <code>line {i.line}</code> : null}{i.text}</li>)}{ch.items.length >= 50 && ch.count > ch.items.length && <li className="muted">and {ch.count - ch.items.length} more</li>}</ul>}
+              {ch.items.length > 0 && ch.level !== 'ok' && <ul>{ch.items.slice(0, SHOWN).map((i, k) => <li key={k}>{i.line ? <code>line {i.line}</code> : null}{i.text}</li>)}{ch.items.length > SHOWN && <li className="muted">and {ch.items.length - SHOWN} more in the issue list</li>}</ul>}
               {ch.id === 'codes' && ch.level === 'error' && <Link href={`/app/p/${project.id}/data`} className="btn ghost sm" style={{ marginTop: 8 }}>Map job titles</Link>}
             </div>
           </div>
