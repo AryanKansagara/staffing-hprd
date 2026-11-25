@@ -1,0 +1,14 @@
+Timecard Detail Report
+"Time Period: 10/04/2026 - 10/05/2026"
+"Location: Synthetic Care Center/Nursing"
+
+Person Number,Person Name,Primary Job,Apply Date,Pay Code,Amount
+000412,"Doe, Jane",RN Charge Nurse,Sun 10/04/2026,Regular,7:45
+000412,"Doe, Jane",RN Charge Nurse,Sun 10/04/2026,Weekend Differential,7:45
+000412,"Doe, Jane",RN Charge Nurse,Mon 10/05/2026,Regular,8:00
+000412,"Doe, Jane",RN Charge Nurse,Mon 10/05/2026,Overtime 1.5,4:15
+000523,"Roe, Sam",C.N.A.,Sun 10/04/2026,Regular,8:00
+000523,"Roe, Sam",C.N.A.,Sun 10/04/2026,Shift Diff Night,8:00
+000523,"Roe, Sam",C.N.A.,Mon 10/05/2026,PTO,8:00
+,,,,Total,51:45
+000618,"Poe, Ann",LPN,Mon 10/05/2026,Holiday Worked,8:00
