@@ -42,7 +42,7 @@ export default function Docs() {
           <p>Optional: on Benchmark, link the building to its Care Compare record to compare against what CMS publishes and to use its real case-mix factors and turnover in the star estimate.</p>
 
           <h2 id="import">Exporting your data <span className="dated">guidance as of {fmtDate(RULES_CHECKED)}</span></h2>
-          <p>The importer detects the format from the header row (it also skips title lines above it), suggests a column mapping you can change, and lists every rejected line by number. Save Excel reports as <b>CSV UTF-8</b>. Menu names below vary by product version and by the permissions your organisation grants; the column names are what matter.</p>
+          <p>The importer detects the format from the header row (it also skips title lines above it), suggests a column mapping you can change, and lists every rejected line by number. A file that ends inside a quoted cell or an XML element is refused, and a PBJ row that is short or holds anything but numbers of 0 or more is rejected. Save Excel reports as <b>CSV UTF-8</b>. Menu names below vary by product version and by the permissions your organisation grants; the column names are what matter.</p>
           <h3>Generic timesheet CSV</h3>
           <p>One row per employee, day and pay type. Required: work date and hours. Strongly recommended: employee ID, job title (or a PBJ job code column), pay code and employment type. Hire and termination dates enable turnover.</p>
           <Code label="timesheet.csv" code={TEMPLATE} />
