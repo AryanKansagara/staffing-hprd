@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import type { Page } from '@playwright/test'
 import { test, expect, census, csv, fixtureFile, HAND, HAND_CENSUS, importFile, newFacility, panel, pbjFile, pick, stat, stored, tab, timesheet, worked } from './fixtures.ts'
 
 // Open bugs, pinned. Each becomes a normal test in the pull request that fixes it.
@@ -342,8 +343,39 @@ test('#16 a facility saved with the old Florida counting is corrected once', asy
   await expect(counting).toHaveValue('direct')
 })
 
-test.fail('#17 an Excel workbook gets the save-as-CSV message', async ({ page }) => {
+test('#17 an Excel workbook gets the save-as-CSV message', async ({ page }) => {
   await newFacility(page)
   await page.locator('input[type=file]').setInputFiles({ name: 'g.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from('PK') })
   await expect(page.getByText('save it as CSV first')).toBeVisible({ timeout: 5_000 })
+  await expect(panel(page, 'g.xlsx')).toHaveCount(0)
 })
+
+const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1])
+for (const [name, mimeType, buffer] of [
+  ['a.xlsx', '', Buffer.from('PK')], ['b.XLSX', 'application/octet-stream', Buffer.from('PK')], ['c.xls', 'application/vnd.ms-excel', OLE], ['d.xls', '', OLE],
+  ['e.ods', 'application/vnd.oasis.opendocument.spreadsheet', Buffer.from('PK')], ['f.ods', '', Buffer.from('PK')],
+  ['g.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', Buffer.from('PK')], ['h.csv', 'text/csv', Buffer.from('PK\x03\x04rest')],
+] as const) test(`#17 ${name} (${mimeType || 'no type'}) gets the message and no panel`, async ({ page }) => {
+  await newFacility(page)
+  await dropFile(page, name, mimeType, buffer)
+  await expect(page.getByText(`${name}: save it as CSV first`)).toBeVisible()
+  await expect(panel(page, name)).toHaveCount(0)
+})
+
+for (const [name, mimeType] of [['a.csv', ''], ['b.csv', 'application/vnd.ms-excel'], ['c.txt', ''], ['d.tsv', 'text/tab-separated-values'], ['e.TSV', ''], ['f', 'text/csv']] as const) test(`#17 ${name} (${mimeType || 'no type'}) still opens`, async ({ page }) => {
+  await newFacility(page)
+  await dropFile(page, name, mimeType, Buffer.from(HAND.text))
+  await expect(panel(page, name)).toContainText('16 rows ready')
+})
+
+test('#17 PBJ XML without a type still opens', async ({ page }) => {
+  await newFacility(page)
+  await dropFile(page, 'p.xml', '', Buffer.from(fixtureFile('pbj-submission-v4.10.xml')))
+  await expect(panel(page, 'p.xml')).toContainText('PBJ XML submission')
+})
+
+/** Drops a file with exactly this MIME type, as the operating system may report none. */
+async function dropFile(page: Page, name: string, type: string, buffer: Buffer) {
+  const data = await page.evaluateHandle(([n, t, bytes]) => { const d = new DataTransfer(); d.items.add(new File([new Uint8Array(bytes)], n, { type: t })); return d }, [name, type, [...buffer]] as [string, string, number[]])
+  await page.locator('.drop').dispatchEvent('drop', { dataTransfer: data })
+}

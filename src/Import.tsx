@@ -9,6 +9,11 @@ import { ask, download, fmtDay, Link, plural, toast } from './ui.tsx'
 
 interface Pending { id: string; file: string; rows: string[][]; det: Detected; kind: Kind }
 
+/** A text file by name or, when the name says nothing, by MIME type. Office types contain "xml" and "text" without being either. */
+const isText = (f: File) => /\.(csv|txt|tsv|xml)$/i.test(f.name) || (!/\.(xls[xmb]?|xlt[xm]?|od[st]|docx?|numbers|pdf|zip)$/i.test(f.name) && (!f.type || /^text\/|^application\/([\w.-]+\+)?xml$|csv/.test(f.type)))
+/** Zip (xlsx, ods, docx) and OLE (xls) files, whatever they are called. */
+const isBinary = async (f: File) => { const b = [...new Uint8Array(await f.slice(0, 4).arrayBuffer())].join(); return b === '80,75,3,4' || b === '208,207,17,224' }
+
 const MAX_BYTES = 60 * 1024 * 1024
 
 export default function DataTab({ project, ds, reload }: { project: Project; ds: Dataset; reload: () => void }) {
@@ -21,7 +26,7 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
     const next: Pending[] = []
     for (const f of Array.from(files)) {
       if (f.size > MAX_BYTES) { toast(`${f.name} is over 60 MB. Export one quarter at a time.`, { tone: 'error' }); continue }
-      if (!/\.(csv|txt|tsv|xml)$/i.test(f.name) && f.type && !/csv|text|xml/.test(f.type)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
+      if (!isText(f) || await isBinary(f)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
       const text = await f.text()
       if (isPbjXml(text)) {
         const bad = xmlProblem(text)
