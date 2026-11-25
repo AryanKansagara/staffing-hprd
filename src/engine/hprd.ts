@@ -171,11 +171,27 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
 
 // ---------- Five-Star staffing estimate ----------
 
-const pointsAtLeast = (cuts: [number, number][], v: number) => Number.isNaN(v) ? 0 : cuts.find(([, min]) => v >= min)![0]
+const pointsAtLeast = (cuts: [number, number][], v: number) => Number.isNaN(v) ? 0 : (cuts.find(([, min]) => v >= min) ?? cuts.at(-1)!)[0]
 // Turnover cut points are exact fractions (28.571 = 2/7) but Care Compare publishes turnover to one
 // decimal, so 28.6 there means a value at or under the cut. Compare at the published precision.
 const pointsAtMost = (cuts: [number, number][], v: number) => (cuts.find(([, max]) => Math.round(v * 10) <= Math.round(max * 10)) ?? cuts.at(-1)!)[0]
 const adminPoints = (n: number) => n <= 0 ? 30 : n === 1 ? 25 : 10
+
+export type StarInput = Exclude<keyof StarInputs, 'lowest'>
+const STAR_RULES: [StarInput, string, (n: number) => boolean, string][] = [
+  ['factorTotal', 'Total factor', n => n > 0, 'must be above 0'],
+  ['factorRn', 'RN factor', n => n > 0, 'must be above 0'],
+  ['factorWeekend', 'Weekend factor', n => n > 0, 'must be above 0'],
+  ['totalTurnover', 'Total nurse turnover', n => n >= 0 && n <= 100, 'must be from 0 to 100'],
+  ['rnTurnover', 'RN turnover', n => n >= 0 && n <= 100, 'must be from 0 to 100'],
+  ['adminDepartures', 'Administrator departures', n => n >= 0 && Number.isInteger(n), 'must be a whole number from 0'],
+]
+/** Why a star input cannot be used, or null. An empty turnover measure is fine; an empty factor is not. */
+export function starInputProblem(key: StarInput, v: unknown): string | null {
+  const [, label, ok, rule] = STAR_RULES.find(([k]) => k === key)!
+  if (v === null && !key.startsWith('factor')) return null
+  return typeof v === 'number' && Number.isFinite(v) && ok(v) ? null : `${label} ${rule}.`
+}
 
 export interface StarEstimate {
   stars: number
@@ -197,7 +213,13 @@ export interface StarEstimate {
  * and the rest rescaled to 380. Checked against every rated facility in the October 2026 Care Compare
  * refresh (see /docs).
  */
-export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zeroRnDays' | 'zeroRnQuarter'>, st: StarInputs): StarEstimate {
+export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zeroRnDays' | 'zeroRnQuarter'>, saved: StarInputs): StarEstimate {
+  // A value saved before inputs were checked, or by hand, is not used: there is no estimate until it is corrected.
+  const problems = STAR_RULES.flatMap(([k]) => starInputProblem(k, saved[k]) ?? [])
+  const usable = (k: StarInput) => !starInputProblem(k, saved[k])
+  const st: StarInputs = { ...saved }
+  for (const k of ['factorTotal', 'factorRn', 'factorWeekend'] as const) if (!usable(k)) st[k] = NaN
+  for (const k of ['totalTurnover', 'rnTurnover', 'adminDepartures'] as const) if (!usable(k)) st[k] = null
   const adj = { total: sm.total.hprd * st.factorTotal, rn: sm.rn.hprd * st.factorRn, weekend: sm.weekend.total.hprd * st.factorWeekend }
   const nextUp = (cuts: [number, number][], v: number) => {
     const i = cuts.findIndex(([, min]) => v >= min)
@@ -222,9 +244,10 @@ export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zer
   const zeroRn = sm.zeroRnQuarter?.days ?? sm.zeroRnDays
   const forcedOneStar = zeroRn >= 4 ? `${zeroRn} days with residents and no RN hours${sm.zeroRnQuarter ? ` in ${sm.zeroRnQuarter.quarter.replace('Q', ' Q')}` : ''}: CMS assigns one star when there are 4 or more in a quarter.` : null
   const unavailable = forcedOneStar ? null
+    : problems.length ? `No estimate: ${problems.join(' ')} Correct it in Star inputs on the Benchmark tab.`
     : !Number.isFinite(adj.total) ? 'No estimate: no day in this period has both hours and a census.'
     : !Number.isFinite(adj.weekend) ? 'No estimate: no weekend day in this period has a census, and weekend staffing is one of the six measures.' : null
-  const points = unavailable ? 0 : Math.round(raw * 380 / max)
+  const points = unavailable || !max ? 0 : Math.round(raw * 380 / max)
   const stars = unavailable ? 0 : forcedOneStar ? 1 : STAR_POINTS.find(([, min]) => points >= min)![0]
   const up = STAR_POINTS.slice().reverse().find(([s]) => s === stars + 1)
   return { stars, points, rawPoints: raw, maxPoints: max, adjusted: adj, parts: known, forcedOneStar, unavailable, nextStar: up && !forcedOneStar && !unavailable ? { stars: up[0], pointsNeeded: up[1] - points } : null }

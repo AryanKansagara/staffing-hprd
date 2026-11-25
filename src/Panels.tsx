@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDays, dow, toCsv } from './engine/csv.ts'
-import { starFor } from './engine/hprd.ts'
+import { starFor, starInputProblem, type StarInput } from './engine/hprd.ts'
 import { coreByWeekday, forecast, historyInputs, OPTION_LABEL, plan, shiftGapRows, type Option, type PlanResult } from './engine/planner.ts'
 import type { Readiness } from './engine/readiness.ts'
 import { quarterRange, quarterOf } from './engine/rules.ts'
@@ -198,10 +198,12 @@ export function Benchmark({ c }: { c: Ctx }) {
     getAverages(st).then(a => { if (live) setAvg(a) }, e => { if (live) setAvgErr(e instanceof Error ? e.message : String(e)) })
     return () => { live = false }
   }, [cms, st])
-  const setStar = (k: keyof typeof s.star, v: string) => {
-    const n = v.trim() === '' ? null : +v
-    if (n !== null && !Number.isFinite(n)) return
-    setSettings({ star: { ...s.star, [k]: k.startsWith('factor') ? (n ?? 1) : n } })
+  /** Saves a usable value; anything else is refused with the reason and the field goes back to what is saved. */
+  const setStar = (k: StarInput, el: HTMLInputElement) => {
+    const n = el.value.trim() === '' ? (k.startsWith('factor') ? 1 : null) : +el.value
+    const bad = el.validity.badInput ? 'Enter a number.' : starInputProblem(k, n)
+    if (bad) { toast(bad, { tone: 'error' }); el.value = String(s.star[k] ?? ''); return }
+    if (n !== s.star[k]) setSettings({ star: { ...s.star, [k]: n } })
   }
   const rows: [string, number, number | null | undefined, number | null | undefined, number | null | undefined][] = [
     ['Total nurse HPRD', sm.total.hprd, cms?.provider.reported.total, cms?.state?.total, cms?.nation?.total],
@@ -278,7 +280,7 @@ export function Benchmark({ c }: { c: Ctx }) {
           <p className="muted small">Case-mix factor = CMS adjusted ÷ reported HPRD. Above 1 means your residents need less care than the national mix, so CMS scales your hours up. {cms ? 'Pre-filled from this facility’s CMS data.' : 'Link the facility above to pre-fill them.'}</p>
           <div className="form-grid">
             {([['factorTotal', 'Total factor'], ['factorRn', 'RN factor'], ['factorWeekend', 'Weekend factor'], ['totalTurnover', 'Total nurse turnover %'], ['rnTurnover', 'RN turnover %'], ['adminDepartures', 'Administrator departures']] as const).map(([k, l]) => (
-              <label className="field" key={k}><span>{l}</span><input type="number" step={k.startsWith('factor') ? 0.001 : 1} key={`${k}${s.star[k]}`} defaultValue={s.star[k] ?? ''} placeholder="not entered" onBlur={e => setStar(k, e.target.value)} /></label>
+              <label className="field" key={k}><span>{l}</span><input type="number" min={k.startsWith('factor') ? 0.001 : 0} max={k.endsWith('Turnover') ? 100 : undefined} step={k.startsWith('factor') ? 0.001 : k === 'adminDepartures' ? 1 : 0.1} key={`${k}${s.star[k]}`} defaultValue={s.star[k] ?? ''} placeholder="not entered" onBlur={e => setStar(k, e.target)} /></label>
             ))}
           </div>
         </div>

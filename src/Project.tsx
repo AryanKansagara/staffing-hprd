@@ -202,7 +202,7 @@ function Overview({ c }: { c: Ctx }) {
               </div>
             ))}
           </div>
-          <p className="tiny muted" style={{ marginTop: 12 }}>Uses this period’s hours, case-mix factors {s.star.factorTotal.toFixed(3)} / {s.star.factorRn.toFixed(3)} / {s.star.factorWeekend.toFixed(3)} and the cut points in the September 2026 Technical Users’ Guide. CMS uses its own MDS census and a full quarter. <Link href={`/app/p/${project.id}/benchmark?r=${period.key}`}>Edit inputs</Link></p>
+          <p className="tiny muted" style={{ marginTop: 12 }}>Uses this period’s hours, case-mix factors {[s.star.factorTotal, s.star.factorRn, s.star.factorWeekend].map(f => Number(f).toFixed(3)).join(' / ')} and the cut points in the September 2026 Technical Users’ Guide. CMS uses its own MDS census and a full quarter. <Link href={`/app/p/${project.id}/benchmark?r=${period.key}`}>Edit inputs</Link></p>
         </div>
         <div className="panel">
           <div className="panel-head"><h2>Quarter to date</h2>{proj && <span className="chip neutral">{proj.quarter.replace('Q', ' Q')}</span>}</div>
