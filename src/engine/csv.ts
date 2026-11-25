@@ -1,22 +1,24 @@
-/** RFC 4180-ish CSV parser: quoted fields, escaped quotes, CRLF, and tab or semicolon delimiters. */
+/** RFC 4180-ish CSV parser: quoted fields, escaped quotes, CRLF, and tab or semicolon delimiters. Throws when a quote is never closed: the rest of the file would be lost inside it. */
 export function parseCsv(text: string): string[][] {
   const src = text.replace(/^﻿/, '')
   const first = src.split('\n', 1)[0]
   const delim = [',', '\t', ';'].map(d => [d, first.split(d).length] as const).sort((a, b) => b[1] - a[1])[0][0]
   const rows: string[][] = []
-  let row: string[] = [], field = '', q = false
+  let row: string[] = [], field = '', q = false, line = 1, opened = 1
   for (let i = 0; i < src.length; i++) {
     const c = src[i]
+    if (c === '\r' || (c === '\n' && src[i - 1] !== '\r')) line++
     if (q) {
       if (c === '"') { if (src[i + 1] === '"') { field += '"'; i++ } else q = false }
       else field += c
-    } else if (c === '"' && field === '') q = true
+    } else if (c === '"' && field === '') { q = true; opened = line }
     else if (c === delim) { row.push(field); field = '' }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++
       row.push(field); rows.push(row); row = []; field = ''
     } else field += c
   }
+  if (q) throw new Error(`a quotation mark opened on line ${opened} is never closed. The file may be cut off.`)
   if (field !== '' || row.length) { row.push(field); rows.push(row) }
   return rows.map(r => r.map(f => f.trim()))
 }

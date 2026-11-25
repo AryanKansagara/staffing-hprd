@@ -44,6 +44,8 @@ export function Planner({ c }: { c: Ctx }) {
     ].filter(x => x.r) as { label: string; r: PlanResult }[]
   }, [pastDays, s])
   const res = mode === 'ahead' ? ahead : past
+  // Required hours are target x census: without any census there is nothing to price.
+  const noCensus = mode === 'ahead' ? !fc.some(f => f.census > 0) : !past.days.length
   const setRates = (patch: Partial<Rates>) => setSettings({ rates: { ...s.rates, ...patch } })
 
   return (
@@ -68,11 +70,12 @@ export function Planner({ c }: { c: Ctx }) {
         </div>
       ) : <p className="muted">Every day in {period.label} priced as if it had been filled to target, starting from the hours actually worked.</p>}
 
-      <div className="stats">
+      {noCensus && <div className="callout warn" style={{ marginBottom: 16 }}>No census to plan with. Import a daily census{mode === 'ahead' ? ' or enter a census forecast' : ' for this period'}.</div>}
+      {!noCensus && <div className="stats">
         <div className="stat"><div className="k">Cost to hit targets</div><div className="v">{money(res.cost)}</div><div className="s">{plural(Math.round(res.hours.prn + res.hours.ot + res.hours.agency), 'hour')} added over {plural(res.days.length, 'day')}</div></div>
         <div className="stat"><div className="k">If agency covered it all</div><div className="v">{money(res.agencyOnlyCost)}</div><div className="s">Savings from the mix: <b className="pos">{money(res.savings)}</b></div></div>
         {OPTS.map(o => <div className="stat" key={o}><div className="k">{OPTION_LABEL[o]}</div><div className="v">{Math.round(res.hours[o]).toLocaleString()}<small>h</small></div><div className="s">{o === 'agency' ? 'After in-house capacity runs out' : o === 'ot' ? `Up to ${GROUPS.map(g => `${s.rates.otCapacity[g]} ${GROUP_LABEL[g]}`).join(', ')} h a day` : `Up to ${GROUPS.map(g => `${s.rates.prnCapacity[g]} ${GROUP_LABEL[g]}`).join(', ')} h a day`}</div></div>)}
-      </div>
+      </div>}
 
       {mode === 'past' && byGap.length > 0 && (
         <div className="panel">
@@ -225,7 +228,7 @@ export function Benchmark({ c }: { c: Ctx }) {
                     <tbody>{rows.map(([k, mine, , ], i) => {
                       const key = (['total', 'rn', 'lpn', 'na', 'weekendTotal', 'weekendRn'] as const)[i]
                       const sv = avg.state?.[key] ?? null, nv = avg.nation?.[key] ?? null
-                      return <tr key={k}><td>{k}</td><td className="num"><b>{hprd(mine)}</b></td><td className="num">{hprd(sv)}{sv ? <span className={`tiny ${mine >= sv ? 'pos' : 'neg'}`}> {signed(mine - sv)}</span> : null}</td><td className="num">{hprd(nv)}{nv ? <span className={`tiny ${mine >= nv ? 'pos' : 'neg'}`}> {signed(mine - nv)}</span> : null}</td></tr>
+                      return <tr key={k}><td>{k}</td><td className="num"><b>{hprd(mine)}</b></td><td className="num">{hprd(sv)}{sv && Number.isFinite(mine) ? <span className={`tiny ${mine >= sv ? 'pos' : 'neg'}`}> {signed(mine - sv)}</span> : null}</td><td className="num">{hprd(nv)}{nv && Number.isFinite(mine) ? <span className={`tiny ${mine >= nv ? 'pos' : 'neg'}`}> {signed(mine - nv)}</span> : null}</td></tr>
                     })}
                       <tr><td>Total nurse turnover</td><td className="num">{s.star.totalTurnover ?? '—'}%</td><td className="num">{avg.state?.totalTurnover ?? '—'}%</td><td className="num">{avg.nation?.totalTurnover ?? '—'}%</td></tr>
                     </tbody>
@@ -246,7 +249,7 @@ export function Benchmark({ c }: { c: Ctx }) {
             <table>
               <thead><tr><th>Measure</th><th className="num">{project.source === 'cms' ? 'PBJ daily, ' : 'Yours, '}{c.period.label.replace(' (to date)', '')}</th><th className="num">CMS reported</th><th className="num">{cms.provider.state} average</th><th className="num">National average</th></tr></thead>
               <tbody>{rows.map(([k, mine, rep, st, nat]) => (
-                <tr key={k}><td>{k}</td><td className="num"><b>{hprd(mine)}</b></td><td className="num">{hprd(rep)}{rep ? <span className={`tiny ${mine >= rep ? 'pos' : 'neg'}`}> {signed(mine - rep)}</span> : null}</td><td className="num">{hprd(st)}</td><td className="num">{hprd(nat)}</td></tr>
+                <tr key={k}><td>{k}</td><td className="num"><b>{hprd(mine)}</b></td><td className="num">{hprd(rep)}{rep && Number.isFinite(mine) ? <span className={`tiny ${mine >= rep ? 'pos' : 'neg'}`}> {signed(mine - rep)}</span> : null}</td><td className="num">{hprd(st)}</td><td className="num">{hprd(nat)}</td></tr>
               ))}
                 <tr><td>Total nurse turnover</td><td className="num muted">—</td><td className="num">{cms.provider.turnover.total ?? '—'}%</td><td className="num">{cms.state?.totalTurnover ?? '—'}%</td><td className="num">{cms.nation?.totalTurnover ?? '—'}%</td></tr>
                 <tr><td>RN turnover</td><td className="num muted">—</td><td className="num">{cms.provider.turnover.rn ?? '—'}%</td><td className="num">{cms.state?.rnTurnover ?? '—'}%</td><td className="num">{cms.nation?.rnTurnover ?? '—'}%</td></tr>
@@ -266,8 +269,8 @@ export function Benchmark({ c }: { c: Ctx }) {
 
       <div className="grid-2">
         <div className="panel">
-          <div className="panel-head"><h2>Star estimate</h2><Stars n={est.stars} label="estimated" /></div>
-          <p className="muted small">{est.points} of 380 points for {c.period.label}.{est.forcedOneStar ? ' ' + est.forcedOneStar : ''}</p>
+          <div className="panel-head"><h2>Star estimate</h2><Stars n={est.stars || null} label="estimated" /></div>
+          <p className="muted small">{est.unavailable ?? `${est.points} of 380 points for ${c.period.label}.`}{est.forcedOneStar ? ' ' + est.forcedOneStar : ''}</p>
           <div className="star-parts">{est.parts.map(p => <div className="star-part" key={p.key}><span>{p.label} <span className="mono muted">{p.value}</span></span><span className="mono">{p.points}/{p.max}</span><div className="meter"><b style={{ width: `${p.points / p.max * 100}%` }} /></div></div>)}</div>
         </div>
         <div className="panel">
@@ -293,8 +296,11 @@ const METRICS: [keyof SnapshotMetrics, string, 'hprd' | 'pct' | 'money' | 'int',
   ['agencyShare', 'Agency share of hours', 'pct', false], ['agencyCost', 'Agency cost', 'money', false], ['otShare', 'Overtime share', 'pct', false],
   ['costPerRd', 'Nursing cost per resident day', 'money', false], ['points', 'Star points (estimate)', 'int', true],
 ]
-const fmtMetric = (v: number, f: 'hprd' | 'pct' | 'money' | 'int') => f === 'hprd' ? hprd(v) : f === 'pct' ? pct(v, 1) : f === 'money' ? money(v) : Math.round(v).toLocaleString()
-const fmtDelta = (v: number, f: 'hprd' | 'pct' | 'money' | 'int') => f === 'hprd' ? signed(v) : f === 'pct' ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v * 100).toFixed(1)} pts` : f === 'money' ? money(v, { sign: true }) : `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(Math.round(v))}`
+const fmtMetric = (v: number, f: 'hprd' | 'pct' | 'money' | 'int') => f === 'hprd' ? hprd(v) : f === 'pct' ? pct(v, 1) : f === 'money' ? money(v) : Number.isFinite(v) ? Math.round(v).toLocaleString() : '—'
+const fmtDelta = (v: number, f: 'hprd' | 'pct' | 'money' | 'int') => !Number.isFinite(v) ? '—' : f === 'hprd' ? signed(v) : f === 'pct' ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v * 100).toFixed(1)} pts` : f === 'money' ? money(v, { sign: true }) : `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(Math.round(v))}`
+/** A figure that could not be computed is NaN here and null after a sync. */
+const known = (v: number | null) => Number.isFinite(v)
+const shown = (m: SnapshotMetrics, k: keyof SnapshotMetrics): number => !known(m[k]) || (k === 'points' && !m.stars) ? NaN : m[k]
 const labelOf = (s: Snapshot) => s.kind === 'quarter' ? s.label.replace('Q', ' Q') : fmtMonth(s.label)
 
 export function History({ c }: { c: Ctx }) {
@@ -335,14 +341,14 @@ export function History({ c }: { c: Ctx }) {
               <thead><tr><th>Period</th><th className="num">Total</th><th className="num">RN</th><th className="num">Weekend</th><th className="num">Days missed</th><th className="num">Agency</th><th className="num">Cost / res. day</th><th>Stars (est.)</th><th /></tr></thead>
               <tbody>{snaps.map((s, i) => {
                 const prev = snaps.slice(0, i).reverse().find(x => x.kind === s.kind)
-                const d = prev ? s.metrics.total - prev.metrics.total : null
+                const d = prev && known(s.metrics.total) && known(prev.metrics.total) ? s.metrics.total - prev.metrics.total : null
                 return (
                   <tr key={s.id}>
                     <td>{labelOf(s)}<div className="tiny muted">saved {new Date(s.createdAt).toLocaleDateString()}</div></td>
-                    <td className="num">{hprd(s.metrics.total)}{d !== null && <span className={`tiny ${d >= 0 ? 'pos' : 'neg'}`}> {signed(d)}</span>}</td>
+                    <td className="num">{hprd(s.metrics.total)}{d !== null && Number.isFinite(d) && <span className={`tiny ${d >= 0 ? 'pos' : 'neg'}`}> {signed(d)}</span>}</td>
                     <td className="num">{hprd(s.metrics.rn)}</td><td className="num">{hprd(s.metrics.weekendTotal)}</td>
                     <td className="num">{s.metrics.daysBelow} / {s.metrics.days}</td><td className="num">{pct(s.metrics.agencyShare)}</td><td className="num">{money(s.metrics.costPerRd)}</td>
-                    <td><Stars n={s.metrics.stars} /></td>
+                    <td><Stars n={s.metrics.stars || null} /></td>
                     <td className="num"><button type="button" className="btn danger-ghost sm" onClick={() => void remove(s)} aria-label={`Delete ${labelOf(s)} snapshot`}>Delete</button></td>
                   </tr>
                 )
@@ -366,9 +372,9 @@ export function History({ c }: { c: Ctx }) {
               <table>
                 <thead><tr><th>Measure</th><th className="num">{labelOf(A)}</th><th className="num">{labelOf(B)}</th><th className="num">Change</th></tr></thead>
                 <tbody>{METRICS.map(([k, l, f, upGood]) => {
-                  const d = B.metrics[k] - A.metrics[k]
-                  const good = Math.abs(d) < 1e-6 ? '' : (d > 0) === upGood ? 'up' : 'down'
-                  return <tr key={k}><td>{l}</td><td className="num">{fmtMetric(A.metrics[k], f)}</td><td className="num">{fmtMetric(B.metrics[k], f)}</td><td className={`num compare-delta ${good}`}>{fmtDelta(d, f)}</td></tr>
+                  const a = shown(A.metrics, k), b = shown(B.metrics, k), d = b - a
+                  const good = !Number.isFinite(d) || Math.abs(d) < 1e-6 ? '' : (d > 0) === upGood ? 'up' : 'down'
+                  return <tr key={k}><td>{l}</td><td className="num">{fmtMetric(a, f)}</td><td className="num">{fmtMetric(b, f)}</td><td className={`num compare-delta ${good}`}>{fmtDelta(d, f)}</td></tr>
                 })}</tbody>
               </table>
             </div>

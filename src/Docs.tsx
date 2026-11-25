@@ -42,15 +42,15 @@ export default function Docs() {
           <p>Optional: on Benchmark, link the building to its Care Compare record to compare against what CMS publishes and to use its real case-mix factors and turnover in the star estimate.</p>
 
           <h2 id="import">Exporting your data <span className="dated">guidance as of {fmtDate(RULES_CHECKED)}</span></h2>
-          <p>The importer detects the format from the header row (it also skips title lines above it), suggests a column mapping you can change, and lists every rejected line by number. Save Excel reports as <b>CSV UTF-8</b>. Menu names below vary by product version and by the permissions your organisation grants; the column names are what matter.</p>
+          <p>The importer detects the format from the header row (it also skips title lines above it), suggests a column mapping you can change, and lists every rejected line by number. A file that ends inside a quoted cell or an XML element is refused, and a PBJ row that is short or holds anything but numbers of 0 or more is rejected. Save Excel reports as <b>CSV UTF-8</b>. Menu names below vary by product version and by the permissions your organisation grants; the column names are what matter.</p>
           <h3>Generic timesheet CSV</h3>
           <p>One row per employee, day and pay type. Required: work date and hours. Strongly recommended: employee ID, job title (or a PBJ job code column), pay code and employment type. Hire and termination dates enable turnover.</p>
           <Code label="timesheet.csv" code={TEMPLATE} />
           <ul>
             <li><b>Hours</b>: decimals (7.5) or clock durations (7:30). Rows of zero hours are skipped; negative rows are reported.</li>
-            <li><b>Pay code</b>: anything containing OT, overtime or double time counts as overtime. PTO, vacation, sick, holiday (not worked), bereavement, jury duty, leave and bonus rows are excluded, as PBJ counts only hours paid for work performed. “Holiday Worked” counts as worked. Shift differentials, weekend premiums and charge pay are excluded too: time clocks book them as extra rows that repeat hours already on a worked row. PBJ pay type codes 1 and 2 are employees, 3 is contract.</li>
+            <li><b>Pay code</b>: anything containing OT, overtime or double time counts as overtime. PTO (also spelled out, and codes such as VAC, HOL, SIC, ETO, EIB or LOA), holiday (not worked), bereavement, jury duty, leave, absence, meal, training, non-productive and bonus rows are excluded: the PBJ Policy Manual (v2.7, June 2025, 2.2) leaves out leave, meal breaks and training away from the job. “Holiday Worked” and “Missed Meal” count as worked. A pay code the importer does not know is counted and listed in the validation report. Shift differentials, weekend premiums and charge pay are excluded too: time clocks book them as extra rows that repeat hours already on a worked row. PBJ pay type codes 1 and 2 are employees, 3 is contract.</li>
             <li><b>Employment type</b>: values containing agency, registry or external are agency; contract, 1099 or traveler are contract. Both are reported to PBJ as pay type 3 (contract) and shown together as agency/contract. Everything else is an employee.</li>
-            <li><b>Names</b>: if there is an employee ID column, name columns are ignored. If there is not, each name becomes a one-way pseudonym on this device and the name is discarded.</li>
+            <li><b>Names</b>: if there is an employee ID column, name columns are ignored. If there is not, each name becomes a one-way pseudonym on this device and the name is discarded. The same happens to names found in the column mapped as the ID.</li>
           </ul>
           <h3>UKG Workforce Central and UKG Pro Workforce Management (Kronos)</h3>
           <ol>
@@ -73,10 +73,10 @@ export default function Docs() {
 
           <h2 id="hprd">How HPRD is computed</h2>
           <ul>
-            <li><b>Daily HPRD</b> = nursing hours worked that day ÷ residents that day. Days with no census or no residents are left out, as CMS does.</li>
+            <li><b>Daily HPRD</b> = nursing hours worked that day ÷ residents that day. Days with no census or no residents are left out, as CMS does. A census day without any timesheet row is left out too and listed on PBJ readiness: its timesheet is missing. Figures that cannot be computed show a dash, and there is no star estimate without a census or without a weekend day.</li>
             <li><b>Period HPRD</b> = total hours ÷ total resident days (the CMS method), not an average of daily ratios. Weekend HPRD uses Saturdays and Sundays only.</li>
             <li><b>Roles</b>: RN = codes 5, 6, 7; LPN = 8, 9; nurse aide = 10, 11, 12; licensed = RN + LPN; total = all three. This is how Care Compare counts.</li>
-            <li><b>Direct care basis</b> (the “Counting” setting): leaves out the RN director of nursing (5) and RNs and LPNs with administrative duties (6, 8). Several state rules count direct care only; Care Compare does not exclude them.</li>
+            <li><b>Direct care basis</b> (the “Counting” setting): leaves out the RN director of nursing (5) and RNs and LPNs with administrative duties (6, 8). The <b>New York</b> choice also leaves out aides in training (11) and medication aides (12): since 2023 only certified aides and licensed nurses count there. Several state rules count direct care only; Care Compare does not exclude them.</li>
             <li><b>Excluded always</b>: paid time off and other non-worked pay, non-nursing job codes (administrator, therapy, dietary and others), hospice staff, private-duty staff and paid feeding assistants, which PBJ excludes from nurse staffing.</li>
             <li><b>RN 24/7</b> is approximated as at least 24 RN hours in the day; shift-level coverage gaps are not visible in daily totals.</li>
             <li><b>Cost</b> = employee straight hours × base wage + overtime hours × base wage × multiplier + agency hours × bill rate, using the rates on the Planner tab. Benefits are not included.</li>

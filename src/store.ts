@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Averages, Provider } from './engine/cms.ts'
 import type { Kind } from './engine/importer.ts'
-import { PRESETS } from './engine/rules.ts'
+import { correctPreset, PRESETS, RULES_REV } from './engine/rules.ts'
 import { DEFAULT_RATES, DEFAULT_STAR, type CensusRow, type Day, type Settings, type Shift } from './engine/types.ts'
 
 export interface ImportMeta { id: string; kind: Kind; fileName: string; format: string; rows: number; skipped: number; errors: number; at: number; from?: string; to?: string }
@@ -102,7 +102,7 @@ export async function loadProjects() {
 }
 
 /** Fills settings added after a project was saved. */
-const migrate = (p: Project): Project => ({ ...p, settings: { ...defaultSettings(), ...p.settings, rates: { ...DEFAULT_RATES, ...p.settings?.rates }, star: { ...DEFAULT_STAR, ...p.settings?.star } }, snapshots: p.snapshots ?? [], imports: p.imports ?? [], titleMap: p.titleMap ?? {} })
+const migrate = (p: Project): Project => ({ ...p, settings: { ...defaultSettings(), ...(p.settings && correctPreset(p.settings)), rates: { ...DEFAULT_RATES, ...p.settings?.rates }, star: { ...DEFAULT_STAR, ...p.settings?.star } }, snapshots: p.snapshots ?? [], imports: p.imports ?? [], titleMap: p.titleMap ?? {} })
 
 export function useProjects() {
   return useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f) }, () => loaded ? projects : null)
@@ -161,6 +161,7 @@ export interface Prefs {
   /** Random per device; used to turn names into pseudonyms when an export has no employee ID. */
   salt: string
   shiftLength: number
+  rulesRev?: number
 }
 const PREF_KEY = 'staffing-hprd.prefs'
 let prefs: Prefs | null = null
@@ -169,7 +170,8 @@ export function getPrefs(): Prefs {
   if (prefs) return prefs
   let raw: Partial<Prefs> = {}
   try { raw = JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}') } catch { /* fresh defaults */ }
-  prefs = { preset: 'cms2024', basis: 'cms', shiftLength: 8, ...raw, rates: { ...DEFAULT_RATES, ...raw.rates }, salt: raw.salt ?? uuid() }
+  if (raw.preset === 'ny' && raw.basis === 'direct' && !raw.rulesRev) raw.basis = 'ny'
+  prefs = { preset: 'cms2024', basis: 'cms', shiftLength: 8, ...raw, rulesRev: RULES_REV, rates: { ...DEFAULT_RATES, ...raw.rates }, salt: raw.salt ?? uuid() }
   if (!raw.salt) localStorage.setItem(PREF_KEY, JSON.stringify(prefs))
   return prefs
 }
@@ -183,5 +185,5 @@ export const usePrefs = () => useSyncExternalStore(f => { prefSubs.add(f); retur
 export function defaultSettings(presetId?: string): Settings {
   const p = typeof localStorage === 'undefined' ? null : getPrefs()
   const preset = PRESETS.find(x => x.id === (presetId ?? p?.preset)) ?? PRESETS[0]
-  return { preset: preset.id, targets: { ...preset.targets }, basis: presetId ? preset.basis : p?.basis ?? preset.basis, rates: structuredClone(p?.rates ?? DEFAULT_RATES), star: { ...DEFAULT_STAR } }
+  return { rulesRev: RULES_REV, preset: preset.id, targets: { ...preset.targets }, basis: presetId ? preset.basis : p?.basis ?? preset.basis, rates: structuredClone(p?.rates ?? DEFAULT_RATES), star: { ...DEFAULT_STAR } }
 }

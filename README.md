@@ -29,6 +29,7 @@ cp .env.example .env   # optional: Supabase URL and publishable key for sync
 npm run dev
 npm test               # engine tests (Node 22+)
 npm run build
+npm run test:e2e       # Playwright on the production build; first run: npx playwright install chromium (E2E_PORT picks the port)
 ```
 
 `/api/cms` is a small Vercel function that proxies the CMS Provider Data Catalog (which sends no CORS headers). The dev and preview servers serve it locally.

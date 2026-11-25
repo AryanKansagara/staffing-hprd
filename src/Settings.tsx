@@ -47,7 +47,7 @@ export default function Settings() {
             <select value={p.preset} onChange={e => save({ preset: e.target.value, basis: PRESETS.find(x => x.id === e.target.value)?.basis ?? p.basis })}>{PRESETS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select>
           </label>
           <label className="field"><span>Counting</span>
-            <select value={p.basis} onChange={e => save({ basis: e.target.value as Prefs['basis'] })}><option value="cms">PBJ codes 5-12 (Care Compare)</option><option value="direct">Direct care only</option></select>
+            <select value={p.basis} onChange={e => save({ basis: e.target.value as Prefs['basis'] })}><option value="cms">PBJ codes 5-12 (Care Compare)</option><option value="direct">Direct care only</option><option value="ny">RN, LPN and CNA only (New York)</option></select>
           </label>
           <label className="field"><span>Shift length for the gap CSV (hours)</span><input type="number" min="4" max="16" step="0.5" defaultValue={p.shiftLength} onBlur={e => save({ shiftLength: Math.min(16, Math.max(4, +e.target.value || 8)) })} /></label>
           <label className="field"><span>Overtime multiplier</span><input type="number" min="1" max="3" step="0.25" defaultValue={p.rates.otMultiplier} onBlur={e => setRate('otMultiplier', null, Math.min(3, Math.max(1, +e.target.value || 1.5)))} /></label>

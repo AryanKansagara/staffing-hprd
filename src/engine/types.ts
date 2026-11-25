@@ -47,8 +47,9 @@ export interface Shift {
 
 export interface CensusRow { date: string; census: number; line: number }
 
-/** Which PBJ codes count toward HPRD. Care Compare counts 5-12. Some state rules count direct care only. */
-export type Basis = 'cms' | 'direct'
+/** Which PBJ codes count toward HPRD. Care Compare counts 5-12. Some state rules count direct care only; New York of that only RNs, LPNs and certified aides. */
+export type Basis = 'cms' | 'direct' | 'ny'
+export const BASIS_LABEL: Record<Basis, string> = { cms: 'PBJ 5-12', direct: 'Direct care', ny: 'RN, LPN, CNA (New York)' }
 
 export interface Targets {
   total: number | null
@@ -91,6 +92,8 @@ export interface StarInputs {
 export type TurnoverKey = 'tto' | 'rto' | 'adm'
 
 export interface Settings {
+  /** The rules revision these settings were saved under; older ones get corrected preset values once. */
+  rulesRev?: number
   preset: string
   targets: Targets
   basis: Basis

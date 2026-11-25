@@ -55,7 +55,8 @@ function score(headers: string[], field: Field): number {
   headers.forEach((h, i) => {
     const n = norm(h)
     // Never let a name column pass as the employee ID: names must not be stored.
-    if (field === 'emp' && /name/.test(n)) return
+    // "Employee type" and the like describe the employee but do not identify anyone.
+    if (field === 'emp' && /\b(names?|type|status|class|classification|category|group|job|title|position|department|dept)\b|name/.test(n)) return
     SYN[field].forEach((s, rank) => {
       const sc = n === s ? 100 - rank : n.includes(s) && s.length > 3 ? 50 - rank : 0
       if (sc > bestScore) { bestScore = sc; best = i }
@@ -99,6 +100,19 @@ export function detect(rows: string[][], fileName = ''): Detected | null {
   return null
 }
 
+// Hours that PBJ never counts (Policy Manual v2.7, 2.2 c, d and j): leave, meals, and training off the floor.
+const LEAVE = /\b(vac(ation)?s?|hol(iday)?s?|sick?|sck|brv|jd|pto\w*|eto|pdo|eib|esl|psl|loa|uto|vto|lwop)\b|time off|earned time|absen|disabilit|work(er)?.?s? comp|military|suspen|non ?-?prod|\bmeals?\b|\blunch\b|\btraining\b|in-?service|\beducation\b/
+/** A missed meal was worked through, and a holiday or on-call shift that was worked counts. */
+const WORKED_ANYWAY = /(?<!not |non-|non )\b(work(ed)?|wrk|wkd)\b(?!.?s? comp)|missed meal|no meal|no lunch/
+/** Pay codes that plainly mean worked time. Anything else unrecognised is counted but reported. */
+const WORKED = /^[123]$|^(reg(ular)?|r|hourly|hours|straight( time)?|st|base|standard|productive|prod|salary|salaried|exempt|non-?exempt|days?|eve(ning)?s?|nights?|noc|am|pm|weekend|shift|agency|contract|prn|per ?diem|call ?back)\b|\b(work(ed)?|wrk|wkd|regular|reg)\b/
+
+/** Whether a pay code is one this importer knows, rather than counted as worked by default. */
+export function knownPay(v: string): boolean {
+  const s = v.toLowerCase().trim()
+  return !s || classifyPay(v) !== 'regular' || WORKED.test(s) || WORKED_ANYWAY.test(s)
+}
+
 export function classifyPay(v: string): PayKind {
   const s = v.toLowerCase().trim()
   if (!s) return 'regular'
@@ -107,6 +121,8 @@ export function classifyPay(v: string): PayKind {
   // pay codes), so counting them would double the hours. Treated like other non-worked pay.
   if (/differential|\bdiff\b|shift prem|weekend prem|premium|charge pay|\bbonus\b/.test(s) && !/^(ot|overtime)\b/.test(s)) return 'nonwork'
   if (/\bot\b|overtime|o\/t|time and a half|double ?time|\bdt\b/.test(s)) return 'overtime'
+  if (WORKED_ANYWAY.test(s) && LEAVE.test(s)) return 'regular'
+  if (LEAVE.test(s)) return 'nonwork'
   if (/pto|vacation|sick|bereave|jury|leave|fmla|personal day|holiday(?! work)|benefit|bonus|severance|retro|on ?call(?! work)|standby|unpaid/.test(s)) return 'nonwork'
   return 'regular'
 }
@@ -125,17 +141,27 @@ export function pseudonym(name: string, salt: string): string {
   return 'N-' + h.toString(16).padStart(8, '0')
 }
 
+/**
+ * Whether an ID cell really holds a person's name: two words or "Last, First", or a bare word in a column whose
+ * header does not say it is a number or ID. Numbers, badges and codes such as E1043, AG-5512 or jdoe are IDs.
+ */
+export function looksLikeName(v: string, header: string): boolean {
+  if (/\p{L}{2,}['’.-]?\s*,\s*\p{L}|\p{L}{2,}\.?\s+\p{L}/u.test(v)) return true
+  return !/\d/.test(v) && /\p{L}{2,}/u.test(v) && !/\b(id|number|no|num|badge|code|file)\b|id$/.test(norm(header))
+}
+
 /** Report exports add subtotal rows ("Total" in the first column, or in the unit or name column). */
 const isTotalRow = (r: string[]) => /^(grand |sub)?total\b/i.test(r[0] ?? '') || r.some(c => /^(grand |sub)?totals?:?$/i.test(c))
 
-export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }> }
+export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }>; /** Rows whose ID cell held a name, replaced by a pseudonym. */ named: number }
 
 export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>, titleMap: Record<string, number | null> = {}, salt = 'local'): TimesheetResult {
   const m = det.mapping
   const shifts: Shift[] = []
   const issues: Issue[] = []
   const titles = new Map<string, { count: number; code: number | null }>()
-  let skipped = 0
+  let skipped = 0, named = 0
+  const unknownPay = new Map<string, { n: number; line: number }>()
   const get = (r: string[], f: Field) => m[f] === undefined ? '' : (r[m[f]!] ?? '')
   for (let i = det.headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
@@ -149,6 +175,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     if (hours < 0) { issues.push({ line, level: 'warning', message: `Negative hours (${hours}) skipped; PBJ needs the corrected total for the day` }); skipped++; continue }
     if (hours === 0) { skipped++; continue }
     let emp = get(r, 'emp').trim()
+    if (emp && looksLikeName(emp, rows[det.headerRow]?.[m.emp!] ?? '')) { emp = pseudonym(emp, salt); named++ }
     if (!emp) {
       const nm = get(r, 'name')
       if (nm) emp = pseudonym(nm, salt)
@@ -166,6 +193,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     titles.set(key, t)
     const payRaw = get(r, 'pay')
     const pay = classifyPay(payRaw)
+    if (!knownPay(payRaw)) { const u = unknownPay.get(payRaw) ?? { n: 0, line }; u.n++; unknownPay.set(payRaw, u) }
     const source = classifySource(get(r, 'source'), payRaw === '3' ? 'contract' : '')
     const s: Shift = { emp, code, title: key, date, hours, pay, source, line }
     const hire = parseDate(get(r, 'hire')), term = parseDate(get(r, 'term'))
@@ -173,8 +201,9 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     if (term) s.term = term
     shifts.push(s)
   }
+  for (const [p, u] of unknownPay) issues.push({ line: u.line, level: 'warning', message: `Pay code "${p}" is not recognised: ${u.n} ${u.n === 1 ? 'row' : 'rows'} counted as worked hours. Remove them from the file if it is leave.` })
   if (rows.length - det.headerRow - 1 <= 0) issues.push({ line: det.headerRow + 1, level: 'error', message: 'No data rows under the header' })
-  return { shifts, issues, skipped, titles }
+  return { shifts, issues, skipped, titles, named }
 }
 
 export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>): { census: CensusRow[]; issues: Issue[]; skipped: number } {
@@ -213,6 +242,16 @@ export function pbjRecordToDay(get: (col: string) => string | undefined): Day | 
   return { date, census: Number.isFinite(census) ? census : null, emp, ctr }
 }
 
+/** Why a PBJ row cannot be trusted, or null. Columns the file does not have at all (older layouts) are not checked. */
+function pbjRowProblem(r: string[], headers: string[]): string | null {
+  if (r.length < headers.length) return `Row is cut off: ${r.length} of ${headers.length} columns`
+  for (let j = 0; j < headers.length; j++) {
+    if (!/^(hrs_\w+|mdscensus)$/i.test(headers[j].trim())) continue
+    if (!/^\d*\.?\d+$|^\d+\.$/.test(r[j])) return `${headers[j]} "${r[j]}" is not a number of 0 or more`
+  }
+  return null
+}
+
 export interface PbjResult { days: Day[]; issues: Issue[]; provider: string | null; providers: { ccn: string; name: string; days: number }[]; skipped: number }
 
 /**
@@ -230,6 +269,8 @@ export function importPbj(rows: string[][], headerRow: number, ccn?: string | nu
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
     if (r.every(c => !c)) continue
+    const bad = pbjRowProblem(r, h)
+    if (bad) { issues.push({ line: i + 1, level: 'error', message: bad }); skipped++; continue }
     const d = pbjRecordToDay(c => col(r, c))
     if (!d) { issues.push({ line: i + 1, level: 'error', message: `Unreadable WorkDate "${col(r, 'WorkDate') ?? ''}"` }); skipped++; continue }
     const id = (col(r, 'PROVNUM') ?? '').padStart(6, '0')
@@ -252,12 +293,27 @@ const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').re
 
 export const isPbjXml = (text: string) => /<nursingHomeData\b/.test(text.slice(0, 4000))
 
+/** Comments and processing instructions, which may hold anything, taken out. */
+const bare = (xml: string) => xml.replace(/<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[^>[]*>/g, '')
+
+/** What is wrong with an XML file whose elements do not all close, as when a download was cut off, or null. */
+export function xmlProblem(text: string): string | null {
+  const open: string[] = []
+  let closedRoot = false
+  const rest = bare(text).replace(/<(\/?)([\w:.-]+)((?:"[^"]*"|'[^']*'|[^"'<>])*)>/g, (_, end: string, name: string, attrs: string) => {
+    if (end) { if (open.pop() !== name) open.push('?'); closedRoot = !open.length } else if (!attrs.endsWith('/')) open.push(name)
+    return ''
+  })
+  return open.length || !closedRoot || rest.includes('<') ? 'the XML is incomplete or cut off. Export it again.' : null
+}
+
 /**
  * Flattens a PBJ XML submission into timesheet rows (one per hour entry) so it goes through the same
  * mapping, validation and job-code checks as any other export. Hire and termination dates come from
  * the employees section.
  */
-export function pbjXmlToRows(text: string): { rows: string[][]; facilityId: string; quarter: string } {
+export function pbjXmlToRows(raw: string): { rows: string[][]; facilityId: string; quarter: string } {
+  const text = bare(raw)
   const people = new Map<string, { hire: string; term: string }>()
   for (const e of each(tag(text, 'employees'), 'employee')) people.set(unescape(tag(e, 'employeeId')), { hire: tag(e, 'hireDate'), term: tag(e, 'terminationDate') })
   const rows: string[][] = [['Employee ID', 'PBJ job code', 'Job title', 'Pay type code', 'Work date', 'Hours', 'Hire date', 'Termination date']]

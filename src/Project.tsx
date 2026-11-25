@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { TABS, type Tab } from './App.tsx'
 import { toCsv } from './engine/csv.ts'
-import { dailyHprd, MEASURE_LABEL, misses, project as projectQ, starFor, summarize, type Measure, type Summary } from './engine/hprd.ts'
+import { counts, dailyHprd, MEASURE_LABEL, misses, project as projectQ, starFor, summarize, type Measure, type Summary } from './engine/hprd.ts'
 import { SHORT_CODE } from './engine/jobcodes.ts'
 import { readiness } from './engine/readiness.ts'
 import { PRESETS, presetById, quarterOf, quarterRange } from './engine/rules.ts'
-import { BUCKET_CODE, BUCKETS, type Basis, type Day, type Settings, type Targets } from './engine/types.ts'
+import { BASIS_LABEL, BUCKET_CODE, BUCKETS, type Basis, type Day, type Settings, type Targets } from './engine/types.ts'
 import { HeatLegend, Heatmap, type HeatCell } from './Heatmap.tsx'
 import { useProject } from './projectData.ts'
 import type { Dataset, Project } from './store.ts'
@@ -140,9 +140,8 @@ export function TargetsBar({ s, onChange }: { s: Settings; onChange: (p: Partial
       {field('licensed', 'Licensed HPRD')}
       {field('na', 'Aide HPRD')}
       <label className="field"><span>Counting</span>
-        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses.">
-          <option value="cms">PBJ 5-12</option>
-          <option value="direct">Direct care</option>
+        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses. New York also leaves out aides in training and medication aides.">
+          {(Object.keys(BASIS_LABEL) as Basis[]).map(b => <option key={b} value={b}>{BASIS_LABEL[b]}</option>)}
         </select>
       </label>
       <label className="toggle" style={{ alignSelf: 'center', paddingTop: 18 }}><input type="checkbox" checked={s.targets.rn24} onChange={e => set({ rn24: e.target.checked })} /><span className="small"><b>RN 24/7</b></span></label>
@@ -171,14 +170,14 @@ function Overview({ c }: { c: Ctx }) {
   const proj = useMemo(() => projectQ(project.days, s.basis, t), [project.days, s.basis, t])
   // The overview calendar always shows the last 26 weeks up to the end of the period, for context.
   const cells = useMemo(() => heatCells(project.days.filter(d => d.date <= period.to).slice(-182), s, 'total'), [project.days, period.key, s])
-  const ok = (v: number, tt: number | null) => tt === null ? null : v + 1e-9 >= tt
+  const ok = (v: number, tt: number | null) => tt === null || !Number.isFinite(v) ? null : v + 1e-9 >= tt
   return (
     <>
       <div className="stats">
-        <Stat k="Total nurse HPRD" v={hprd(sm.total.hprd)} target={t.total} hit={ok(sm.total.hprd, t.total)} sub={`${plural(sm.below.total, 'day')} below target`} />
-        <Stat k="RN HPRD" v={hprd(sm.rn.hprd)} target={t.rn} hit={ok(sm.rn.hprd, t.rn)} sub={t.rn24 ? `${plural(sm.below.rn24, 'day')} under 24 RN hours` : `${plural(sm.below.rn, 'day')} below target`} />
+        <Stat k="Total nurse HPRD" v={hprd(sm.total.hprd)} target={t.total} hit={ok(sm.total.hprd, t.total)} sub={sm.days ? `${plural(sm.below.total, 'day')} below target` : 'Needs a census for these days'} />
+        <Stat k="RN HPRD" v={hprd(sm.rn.hprd)} target={t.rn} hit={ok(sm.rn.hprd, t.rn)} sub={!sm.days ? 'Needs a census for these days' : t.rn24 ? `${plural(sm.below.rn24, 'day')} under 24 RN hours` : `${plural(sm.below.rn, 'day')} below target`} />
         <Stat k="LPN HPRD" v={hprd(sm.lpn.hprd)} target={t.licensed} hit={t.licensed === null ? null : ok(sm.licensed.hprd, t.licensed)} sub={`Licensed (RN + LPN) ${hprd(sm.licensed.hprd)}`} />
-        <Stat k="Nurse aide HPRD" v={hprd(sm.na.hprd)} target={t.na} hit={ok(sm.na.hprd, t.na)} sub={`${plural(sm.below.na, 'day')} below target`} />
+        <Stat k="Nurse aide HPRD" v={hprd(sm.na.hprd)} target={t.na} hit={ok(sm.na.hprd, t.na)} sub={sm.days ? `${plural(sm.below.na, 'day')} below target` : 'Needs a census for these days'} />
       </div>
       <div className="stats">
         <Stat k="Weekend total HPRD" v={hprd(sm.weekend.total.hprd)} sub={<>Weekdays {hprd(sm.weekday.total.hprd)} · gap <b className={sm.weekendGap.total > 0.2 ? 'neg' : ''}>{signed(-sm.weekendGap.total)}</b></>} />
@@ -190,9 +189,9 @@ function Overview({ c }: { c: Ctx }) {
 
       <div className="grid-2">
         <div className="panel">
-          <div className="panel-head"><h2>Staffing star estimate</h2><Stars n={star.stars} label="estimated staffing rating" /></div>
+          <div className="panel-head"><h2>Staffing star estimate</h2><Stars n={star.stars || null} label="estimated staffing rating" /></div>
           {star.forcedOneStar ? <div className="callout bad" style={{ marginBottom: 12 }}>{star.forcedOneStar}</div> : null}
-          <p className="muted small">{star.points} of 380 points{star.maxPoints < 380 ? ` (rescaled from ${star.rawPoints} of ${star.maxPoints}: turnover not entered)` : ''}. {star.nextStar ? `${star.nextStar.pointsNeeded} more points for ${star.nextStar.stars} stars.` : star.stars === 5 ? 'Top band.' : ''}</p>
+          <p className="muted small">{star.unavailable ?? <>{star.points} of 380 points{star.maxPoints < 380 ? ` (rescaled from ${star.rawPoints} of ${star.maxPoints}: turnover not entered)` : ''}. {star.nextStar ? `${star.nextStar.pointsNeeded} more points for ${star.nextStar.stars} stars.` : star.stars === 5 ? 'Top band.' : ''}</>}</p>
           <div className="star-parts">
             {star.parts.map(p => (
               <div className="star-part" key={p.key}>
@@ -310,7 +309,7 @@ function Daily({ c }: { c: Ctx }) {
             <table>
               <thead><tr><th>PBJ code</th><th className="num">Employee h</th><th className="num">Agency/contract h</th><th className="num">HPRD</th><th>Counts toward</th></tr></thead>
               <tbody>{BUCKETS.map(b => (
-                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{s.basis === 'direct' && ['rnDon', 'rnAdmin', 'lpnAdmin'].includes(b) ? 'Excluded (direct care basis)' : 'Total and role HPRD'}</td></tr>
+                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{!counts(s.basis, b) ? `Excluded (${BASIS_LABEL[s.basis]} basis)` : 'Total and role HPRD'}</td></tr>
               ))}</tbody>
             </table>
           </div>
@@ -332,7 +331,7 @@ function Daily({ c }: { c: Ctx }) {
                 </tr>) })}</tbody>
             </table>
           </div>
-        ) : <Empty title="Every day met every target"><p className="muted">Nice. Try a tighter preset to see where the margin is.</p></Empty>}
+        ) : !hp.length ? <Empty title="No day with a census"><p className="muted">Hours per resident day need a daily census. Import one on the Data tab.</p></Empty> : <Empty title="Every day met every target"><p className="muted">Nice. Try a tighter preset to see where the margin is.</p></Empty>}
       </div>
     </>
   )

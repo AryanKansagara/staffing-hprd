@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { parseCsv } from './engine/csv.ts'
-import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
+import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, xmlProblem, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
 import { isNursing, JOB_CODES, SHORT_CODE } from './engine/jobcodes.ts'
-import type { CensusRow, Shift } from './engine/types.ts'
-import { mergeDays, rebuild, sampleData } from './projectData.ts'
+import type { CensusRow, Day, Shift } from './engine/types.ts'
+import { mergeDays, rebuild, sampleData, withoutCensus } from './projectData.ts'
 import { getPrefs, putData, saveProject, uuid, type Dataset, type Project } from './store.ts'
 import { ask, download, fmtDay, Link, plural, toast } from './ui.tsx'
 
@@ -24,6 +24,8 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
       if (!/\.(csv|txt|tsv|xml)$/i.test(f.name) && f.type && !/csv|text|xml/.test(f.type)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
       const text = await f.text()
       if (isPbjXml(text)) {
+        const bad = xmlProblem(text)
+        if (bad) { toast(`${f.name}: ${bad}`, { tone: 'error' }); continue }
         // The PBJ XML submission file: flattened to one row per hour entry, then mapped like any timesheet.
         const x = pbjXmlToRows(text)
         if (x.rows.length < 2) { toast(`${f.name}: PBJ XML file with no staffing hours.`, { tone: 'error' }); continue }
@@ -32,7 +34,8 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
         continue
       }
       if (/\.xml$/i.test(f.name)) { toast(`${f.name}: not a PBJ XML file (no nursingHomeData element).`, { tone: 'error' }); continue }
-      const rows = parseCsv(text)
+      let rows: string[][]
+      try { rows = parseCsv(text) } catch (e) { toast(`${f.name}: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error', ttl: 10000 }); continue }
       const det = detect(rows, f.name)
       if (!det) {
         // Unknown layout: let the user map it, starting as a timesheet.
@@ -127,7 +130,7 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
   const missing = REQUIRED[p.kind].filter(f => mapping[f] === undefined)
   const preview = useMemo(() => {
     if (missing.length) return null
-    if (p.kind === 'timesheet') { const r = importTimesheet(p.rows, det, project.titleMap, getPrefs().salt); return { issues: r.issues, ok: r.shifts.length, skipped: r.skipped, unmapped: [...r.titles].filter(([, t]) => t.code === null), dates: r.shifts.map(s => s.date) } }
+    if (p.kind === 'timesheet') { const r = importTimesheet(p.rows, det, project.titleMap, getPrefs().salt); return { issues: r.issues, ok: r.shifts.length, skipped: r.skipped, named: r.named, unmapped: [...r.titles].filter(([, t]) => t.code === null), dates: r.shifts.map(s => s.date) } }
     if (p.kind === 'census') { const r = importCensus(p.rows, det); return { issues: r.issues, ok: r.census.length, skipped: r.skipped, unmapped: [], dates: r.census.map(c => c.date) } }
     const r = importPbj(p.rows, p.det.headerRow, ccn); return { issues: r.issues, ok: r.days.length, skipped: r.skipped, unmapped: [], dates: r.days.map(d => d.date), providers: r.providers, provider: r.provider }
   }, [p, mapping, missing.length, ccn])
@@ -137,7 +140,7 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
     setBusy(true)
     try {
       const salt = getPrefs().salt
-      let shifts: Shift[] = ds.shifts, census: CensusRow[] = ds.census, days = project.days, rows = 0, skipped = 0, errors = 0
+      let shifts: Shift[] = ds.shifts, census: CensusRow[] = ds.census, days = project.days, pbjDays: Day[] = [], rows = 0, skipped = 0, errors = 0
       if (p.kind === 'timesheet') {
         const r = importTimesheet(p.rows, det, project.titleMap, salt)
         const [a, b] = range!
@@ -152,13 +155,17 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
         rows = r.census.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       } else {
         const r = importPbj(p.rows, p.det.headerRow, ccn)
+        pbjDays = r.days
         days = mergeDays(project.days, r.days)
         rows = r.days.length; skipped = r.skipped; errors = r.issues.filter(i => i.level === 'error').length
       }
       const meta = { id: uuid(), kind: p.kind, fileName: p.file, format: p.det.format, rows, skipped, errors, at: Date.now(), from: range?.[0], to: range?.[1] }
       const base = { ...project, days, imports: [...project.imports, meta] }
-      if (p.kind === 'pbj') await saveProject(base)
-      else await rebuild(base, { shifts, census })
+      if (p.kind === 'pbj') {
+        const rest = withoutCensus(ds, pbjDays)
+        if (rest.census.length < ds.census.length) await putData(project.id, rest)
+        await saveProject(base)
+      } else await rebuild(base, { shifts, census })
       toast(`Imported ${plural(rows, p.kind === 'timesheet' ? 'shift row' : 'day')} from ${p.file}`, { tone: 'ok' })
       onDone()
     } catch (e) {
@@ -183,13 +190,14 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
             <label className="field" key={f}><span>{FIELD_LABEL[f]}{REQUIRED[p.kind].includes(f) ? ' *' : ''}</span>
               <select value={mapping[f] ?? ''} onChange={e => setMapping(m => { const n = { ...m }; if (e.target.value === '') delete n[f]; else n[f] = +e.target.value; return n })} aria-invalid={REQUIRED[p.kind].includes(f) && mapping[f] === undefined}>
                 <option value="">Not in file</option>
-                {p.det.headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}{p.rows[p.det.headerRow + 1]?.[i] && f !== 'name' ? `  (e.g. ${p.rows[p.det.headerRow + 1][i].slice(0, 24)})` : ''}</option>)}
+                {p.det.headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}{p.rows[p.det.headerRow + 1]?.[i] && f !== 'name' && f !== 'emp' ? `  (e.g. ${p.rows[p.det.headerRow + 1][i].slice(0, 24)})` : ''}</option>)}
               </select>
             </label>
           ))}
         </div>
       )}
       {p.kind === 'timesheet' && mapping.name !== undefined && mapping.emp === undefined && <p className="small muted">No employee ID column: names will be replaced by a one-way pseudonym on this device and discarded.</p>}
+      {preview && 'named' in preview && preview.named! > 0 && <p className="small muted">The employee ID column holds names in {plural(preview.named!, 'row')}: they will be replaced by a one-way pseudonym on this device and discarded.</p>}
       {preview && 'providers' in preview && preview.providers!.length > 1 && (
         <label className="field" style={{ marginBottom: 14, maxWidth: 520 }}><span>Facility in this file ({preview.providers!.length})</span>
           <select value={preview.provider ?? ''} onChange={e => setCcn(e.target.value || null)} aria-invalid={!preview.provider}>
