@@ -251,13 +251,42 @@ test.fail('#15 cost per resident day uses the days that have a census', async ({
   await expect(stat(page, 'Nursing cost per resident day').locator('.v')).toHaveText('$21', { timeout: 5_000 }) // 10 h x 20.50 / 10
 })
 
-test.fail('#16 Florida does not count medication aides as CNA hours', async ({ page }) => {
+test('#16 Florida does not count medication aides as CNA hours', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, timesheet('E1,CNA,10/03/2026,10,REG,Employee', 'E2,Medication Aide,10/03/2026,10,REG,Employee'))
   await importFile(page, census('10/03/2026,10'))
   await tab(page, path, 'overview')
   await page.getByRole('group', { name: 'Staffing targets' }).getByLabel('Targets').selectOption('fl')
   await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('1.00', { timeout: 5_000 })
+  await expect(stat(page, 'Total nurse HPRD').locator('.v')).toHaveText('2.00')
+  await page.goto(`${path}/calendar?d=2026-10-03`)
+  await expect(page.getByRole('row', { name: /^12 · Med aide/ })).toContainText('Total HPRD only')
+  await expect(page.getByText('Medication aide (total only)')).toBeVisible()
+  // 36 h are required and 20 worked. Licensed 10 and aides 10 bring 40 with the medication aides: no total gap is left.
+  await tab(page, path, 'planner')
+  await page.getByRole('radio', { name: 'Price past gaps' }).click()
+  await expect(stat(page, 'Cost to hit targets').locator('.s')).toContainText('20 hours added over 1 day')
+})
+
+test('#16 a facility saved with the old Florida counting is corrected once', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, timesheet('E1,CNA,10/03/2026,10,REG,Employee', 'E2,Medication Aide,10/03/2026,10,REG,Employee'))
+  await importFile(page, census('10/03/2026,10'))
+  await page.evaluate(() => new Promise<void>(res => {
+    const r = indexedDB.open('staffing-hprd', 1)
+    r.onsuccess = () => {
+      const os = r.result.transaction('projects', 'readwrite').objectStore('projects')
+      const all = os.getAll()
+      all.onsuccess = () => { const p = all.result[0]; p.settings = { ...p.settings, preset: 'fl', basis: 'direct', rulesRev: 1 }; os.put(p).onsuccess = () => { r.result.close(); res() } }
+    }
+  }))
+  await tab(page, path, 'overview')
+  await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('1.00')
+  const counting = page.getByRole('group', { name: 'Staffing targets' }).getByLabel('Counting')
+  await counting.selectOption('direct')
+  await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('2.00')
+  await page.reload()
+  await expect(counting).toHaveValue('direct')
 })
 
 test.fail('#17 an Excel workbook gets the save-as-CSV message', async ({ page }) => {

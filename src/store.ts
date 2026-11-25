@@ -171,6 +171,7 @@ export function getPrefs(): Prefs {
   let raw: Partial<Prefs> = {}
   try { raw = JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}') } catch { /* fresh defaults */ }
   if (raw.preset === 'ny' && raw.basis === 'direct' && !raw.rulesRev) raw.basis = 'ny'
+  if (raw.preset === 'fl' && raw.basis === 'direct' && (raw.rulesRev ?? 0) < 2) raw.basis = 'fl'
   prefs = { preset: 'cms2024', basis: 'cms', shiftLength: 8, ...raw, rulesRev: RULES_REV, rates: { ...DEFAULT_RATES, ...raw.rates }, salt: raw.salt ?? uuid() }
   if (!raw.salt) localStorage.setItem(PREF_KEY, JSON.stringify(prefs))
   return prefs

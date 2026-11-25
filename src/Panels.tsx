@@ -121,7 +121,7 @@ export function Planner({ c }: { c: Ctx }) {
             </tbody>
           </table>
         </div>
-        {mode === 'ahead' && <p className="tiny muted" style={{ marginTop: 8 }}>“Scheduled” is the in-house straight-time core by weekday from the last four weeks: {WD.map((w, i) => `${w} ${Math.round(core[i].rn + core[i].lpn + core[i].na)} h`).join(', ')}. Agency and overtime are left out so the plan can re-decide them.</p>}
+        {mode === 'ahead' && <p className="tiny muted" style={{ marginTop: 8 }}>“Scheduled” is the in-house straight-time core by weekday from the last four weeks: {WD.map((w, i) => `${w} ${Math.round(core[i].rn + core[i].lpn + core[i].na + core[i].other)} h`).join(', ')}. Agency and overtime are left out so the plan can re-decide them.</p>}
       </div>
 
       <div className="panel">

@@ -30,9 +30,9 @@ export const PRESETS: Preset[] = [
     note: '3.5 direct care service hours per patient day, at least 2.4 of them by CNAs. In force since July 1, 2018.',
   },
   {
-    id: 'fl', label: 'Florida (s. 400.23)', short: 'Florida', status: 'in-force', basis: 'direct',
+    id: 'fl', label: 'Florida (s. 400.23)', short: 'Florida', status: 'in-force', basis: 'fl',
     targets: { total: 3.6, rn: null, licensed: 1.0, na: 2.0, rn24: false },
-    note: '3.6 hours of direct care per resident day (weekly average), at least 2.0 by CNAs and 1.0 by licensed nurses. Since the 2022 change (HB 1239), up to 0.6 of the 3.6 may come from other direct-care disciplines, which this tool does not count.',
+    note: '3.6 hours of direct care per resident day (weekly average), at least 2.0 by CNAs and 1.0 by licensed nurses. Since the 2022 change (HB 1239), up to 0.6 of the 3.6 may come from other direct-care disciplines, which this tool does not count. Aides working as qualified medication aides (PBJ code 12) count toward the 3.6 only, not the 2.0 or the 1.0 (s. 400.23(3)(b)3).',
   },
   {
     id: 'il', label: 'Illinois (77 Ill. Adm. Code 300.1230), skilled care', short: 'Illinois', status: 'in-force', basis: 'direct',
@@ -48,16 +48,18 @@ export const PRESETS: Preset[] = [
 
 export const presetById = (id: string) => PRESETS.find(p => p.id === id)
 
-/** Revision 1 (November 2026): Illinois licensed and RN minimums, New York counting. */
-export const RULES_REV = 1
+/** Revision 1 (November 2026): Illinois licensed and RN minimums, New York counting. Revision 2: Florida counting. */
+export const RULES_REV = 2
 
 /** Gives settings saved with a preset before its correction the corrected values, once. Custom targets and other choices stay. */
 export function correctPreset(s: Settings): Settings {
-  if ((s.rulesRev ?? 0) >= RULES_REV) return s
+  const rev = s.rulesRev ?? 0
+  if (rev >= RULES_REV) return s
   const p = presetById(s.preset)
   const next = { ...s, rulesRev: RULES_REV }
-  if (s.preset === 'il' && p) next.targets = { ...p.targets }
-  if (s.preset === 'ny' && s.basis === 'direct') next.basis = 'ny'
+  if (rev < 1 && s.preset === 'il' && p) next.targets = { ...p.targets }
+  if (rev < 1 && s.preset === 'ny' && s.basis === 'direct') next.basis = 'ny'
+  if (rev < 2 && s.preset === 'fl' && s.basis === 'direct') next.basis = 'fl'
   return next
 }
 

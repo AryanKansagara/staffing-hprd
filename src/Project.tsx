@@ -140,7 +140,7 @@ export function TargetsBar({ s, onChange }: { s: Settings; onChange: (p: Partial
       {field('licensed', 'Licensed HPRD')}
       {field('na', 'Aide HPRD')}
       <label className="field"><span>Counting</span>
-        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses. New York also leaves out aides in training and medication aides.">
+        <select value={s.basis} onChange={e => onChange({ basis: e.target.value as Basis })} title="Care Compare counts PBJ codes 5-12. Direct care leaves out the DON and administrative nurses. New York also leaves out aides in training and medication aides. Florida is direct care with medication aides in the total but not as aides.">
           {(Object.keys(BASIS_LABEL) as Basis[]).map(b => <option key={b} value={b}>{BASIS_LABEL[b]}</option>)}
         </select>
       </label>
@@ -287,14 +287,15 @@ function Daily({ c }: { c: Ctx }) {
 
       <div className="panel">
         <div className="panel-head"><h2>Hours per resident day by role</h2>
-          <div className="legend"><span><i style={{ background: 'var(--col-rn)' }} />RN</span><span><i style={{ background: 'var(--col-lpn)' }} />LPN</span><span><i style={{ background: 'var(--col-na)' }} />Nurse aide</span></div>
+          <div className="legend"><span><i style={{ background: 'var(--col-rn)' }} />RN</span><span><i style={{ background: 'var(--col-lpn)' }} />LPN</span><span><i style={{ background: 'var(--col-na)' }} />Nurse aide</span>{hp.some(d => d.hours.other > 0) && <span><i style={{ background: 'var(--ink-4)' }} />Medication aide (total only)</span>}</div>
         </div>
         <div className="bars" role="img" aria-label={`Stacked daily HPRD by role. Dashed line at the ${MEASURE_LABEL[m].toLowerCase()} target ${target.toFixed(2)}.`}>
           {hp.map(d => (
-            <div key={d.date} className="bar" title={`${fmtDayLong(d.date)}\nRN ${d.rn.toFixed(2)} · LPN ${d.lpn.toFixed(2)} · Aide ${d.na.toFixed(2)} · Total ${d.total.toFixed(2)}`} onClick={() => select(d.date)} style={{ height: `${d.total / max * 100}%`, outline: sel === d.date ? '2px solid var(--ink)' : undefined }}>
+            <div key={d.date} className="bar" title={`${fmtDayLong(d.date)}\nRN ${d.rn.toFixed(2)} · LPN ${d.lpn.toFixed(2)} · Aide ${d.na.toFixed(2)}${d.hours.other ? ` · Medication aide ${(d.hours.other / d.census).toFixed(2)}` : ''} · Total ${d.total.toFixed(2)}`} onClick={() => select(d.date)} style={{ height: `${d.total / max * 100}%`, outline: sel === d.date ? '2px solid var(--ink)' : undefined }}>
               <i style={{ height: `${d.rn / d.total * 100}%`, background: 'var(--col-rn)' }} />
               <i style={{ height: `${d.lpn / d.total * 100}%`, background: 'var(--col-lpn)' }} />
               <i style={{ height: `${d.na / d.total * 100}%`, background: 'var(--col-na)' }} />
+              {d.hours.other > 0 && <i style={{ height: `${d.hours.other / d.hours.total * 100}%`, background: 'var(--ink-4)' }} />}
             </div>
           ))}
           {m === 'total' && <div className="line" style={{ bottom: `${target / max * 100}%` }}><span>{target.toFixed(2)}</span></div>}
@@ -309,7 +310,7 @@ function Daily({ c }: { c: Ctx }) {
             <table>
               <thead><tr><th>PBJ code</th><th className="num">Employee h</th><th className="num">Agency/contract h</th><th className="num">HPRD</th><th>Counts toward</th></tr></thead>
               <tbody>{BUCKETS.map(b => (
-                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{!counts(s.basis, b) ? `Excluded (${BASIS_LABEL[s.basis]} basis)` : 'Total and role HPRD'}</td></tr>
+                <tr key={b}><td>{BUCKET_CODE[b]} · {SHORT_CODE[BUCKET_CODE[b]]}</td><td className="num">{day.emp[b].toFixed(1)}</td><td className="num">{day.ctr[b].toFixed(1)}</td><td className="num">{day.census ? ((day.emp[b] + day.ctr[b]) / day.census).toFixed(3) : '—'}</td><td className="small muted">{!counts(s.basis, b) ? `Excluded (${BASIS_LABEL[s.basis]} basis)` : counts(s.basis, b) === 'total' ? 'Total HPRD only' : 'Total and role HPRD'}</td></tr>
               ))}</tbody>
             </table>
           </div>

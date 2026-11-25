@@ -32,23 +32,27 @@ export function aggregateDays(shifts: Shift[], census: CensusRow[]): Day[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-const COUNTS: Record<Basis, Record<string, boolean>> = {
+/** What a bucket counts toward: true = its group and the total, 'total' = the total only. */
+const COUNTS: Record<Basis, Record<Bucket, boolean | 'total'>> = {
   cms: { rnDon: true, rnAdmin: true, rn: true, lpnAdmin: true, lpn: true, cna: true, naTrn: true, medAide: true },
   // Direct care: DON and administrative nurse hours are left out, as several state rules require.
   direct: { rnDon: false, rnAdmin: false, rn: true, lpnAdmin: false, lpn: true, cna: true, naTrn: true, medAide: true },
   // PHL 2895-b(3)(b): since 2023 a certified nurse aide or a licensed nurse, not performing administrative services.
   ny: { rnDon: false, rnAdmin: false, rn: true, lpnAdmin: false, lpn: true, cna: true, naTrn: false, medAide: false },
+  // s. 400.23(3)(b)3, Florida Statutes: aides doing a qualified medication aide's work count in neither the 2.0 CNA nor the 1.0 licensed hours, only in the 3.6.
+  fl: { rnDon: false, rnAdmin: false, rn: true, lpnAdmin: false, lpn: true, cna: true, naTrn: true, medAide: 'total' },
 }
 export const counts = (basis: Basis, b: Bucket) => COUNTS[basis][b]
 
-export interface GroupHours { rn: number; lpn: number; na: number; total: number }
+/** `other` counts toward the total and no group. */
+export interface GroupHours { rn: number; lpn: number; na: number; other: number; total: number }
 
 /** Hours by group for a day under a counting basis, optionally with extra hours added by the planner. */
 export function groupHours(d: Day, basis: Basis, extra?: Partial<Record<Group, number>>): GroupHours {
-  const g = { rn: 0, lpn: 0, na: 0, total: 0 }
-  for (const b of BUCKETS) if (COUNTS[basis][b]) g[BUCKET_GROUP[b]] += d.emp[b] + d.ctr[b]
+  const g = { rn: 0, lpn: 0, na: 0, other: 0, total: 0 }
+  for (const b of BUCKETS) if (COUNTS[basis][b]) g[COUNTS[basis][b] === 'total' ? 'other' : BUCKET_GROUP[b]] += d.emp[b] + d.ctr[b]
   if (extra) for (const k of GROUPS) g[k] += extra[k] ?? 0
-  g.total = g.rn + g.lpn + g.na
+  g.total = g.rn + g.lpn + g.na + g.other
   return g
 }
 
