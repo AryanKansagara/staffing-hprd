@@ -235,7 +235,6 @@ test.fail('#12 the issue list holds every duplicate row', async ({ page }) => {
 })
 
 test('#13 a negative case-mix factor does not break the facility', async ({ page }) => {
-  test.fail()
   const path = await newFacility(page)
   await importFile(page, HAND)
   await importFile(page, HAND_CENSUS)
@@ -243,7 +242,42 @@ test('#13 a negative case-mix factor does not break the facility', async ({ page
   await page.getByLabel('Total factor').fill('-1')
   await page.getByLabel('Total factor').blur()
   await expect(page.getByRole('heading', { name: 'Star inputs' })).toBeVisible({ timeout: 5_000 })
+  await expect(page.getByText('Total factor must be above 0.')).toBeVisible()
+  await expect(page.getByLabel('Total factor')).toHaveValue('1')
+  for (const [label, v, why] of [['RN turnover %', '900', 'RN turnover must be from 0 to 100.'], ['Administrator departures', '1.5', 'Administrator departures must be a whole number from 0.']]) {
+    await page.getByLabel(label).fill(v)
+    await page.getByLabel(label).blur()
+    await expect(page.getByText(why)).toBeVisible()
+    await expect(page.getByLabel(label)).toHaveValue('')
+  }
+  await page.getByLabel('Total nurse turnover %').fill('41.8')
+  await page.getByLabel('Total nurse turnover %').blur()
+  await expect(page.locator('.star-part', { hasText: 'Total nurse turnover' })).toContainText('35/50')
   await tab(page, path, 'overview')
+  await expect(page.getByRole('heading', { name: 'Staffing star estimate' })).toBeVisible()
+})
+
+test('#13 a facility saved with a negative factor opens and can be corrected', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, HAND)
+  await importFile(page, HAND_CENSUS)
+  await page.evaluate(() => new Promise<void>(res => {
+    const r = indexedDB.open('staffing-hprd', 1)
+    r.onsuccess = () => {
+      const os = r.result.transaction('projects', 'readwrite').objectStore('projects')
+      const all = os.getAll()
+      all.onsuccess = () => { const p = all.result[0]; p.settings.star.factorTotal = -1; os.put(p).onsuccess = () => { r.result.close(); res() } }
+    }
+  }))
+  for (const t of ['overview', 'benchmark', 'history'] as const) {
+    await tab(page, path, t)
+    await expect(page.locator('#main .panel').first()).toBeVisible()
+  }
+  await tab(page, path, 'benchmark')
+  await expect(page.getByText('No estimate: Total factor must be above 0.')).toBeVisible()
+  await page.getByLabel('Total factor').fill('1')
+  await page.getByLabel('Total factor').blur()
+  await expect(page.getByText('152 of 380 points')).toBeVisible()
 })
 
 test('#14 an assistant director of nursing is code 6', async ({ page }) => {
