@@ -157,7 +157,7 @@ test.fail('#8 hours without a census do not fail the plausibility screen', async
   await expect(page.getByText(/is above 12/)).toHaveCount(0, { timeout: 3_000 })
 })
 
-test.fail('#9 RN-less days in two quarters do not add up to one star', async ({ page }) => {
+test('#9 RN-less days in two quarters do not add up to one star', async ({ page }) => {
   const path = await newFacility(page)
   const days = ['06/27', '06/28', '07/04', '07/05']
   await importFile(page, timesheet(...days.map(d => `E1,CNA,${d}/2026,8,REG,Employee`)))
@@ -165,6 +165,15 @@ test.fail('#9 RN-less days in two quarters do not add up to one star', async ({ 
   await page.goto(`${path}/overview?r=all`)
   await expect(page.getByText('of 380 points')).toBeVisible()
   await expect(page.getByText(/assigns one star/)).toHaveCount(0, { timeout: 3_000 })
+})
+
+test('#9 four RN-less days in one quarter do, and the quarter is named', async ({ page }) => {
+  const path = await newFacility(page)
+  const days = ['06/28', '07/04', '07/05', '07/06', '07/07']
+  await importFile(page, timesheet(...days.map(d => `E1,CNA,${d}/2026,8,REG,Employee`)))
+  await importFile(page, census(...days.map(d => `${d}/2026,10`)))
+  await page.goto(`${path}/overview?r=all`)
+  await expect(page.getByText('4 days with residents and no RN hours in 2026 Q3: CMS assigns one star')).toBeVisible()
 })
 
 test('#10 a decimal comma is not ten times the hours', async ({ page }) => {
