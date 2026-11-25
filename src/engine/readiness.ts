@@ -74,6 +74,16 @@ export function readiness(days: Day[], shifts: Shift[] | null, census: CensusRow
     if (other.length) push({ id: 'other', level: 'ok', title: 'Non-nursing staff kept out of HPRD', detail: `${other.length} rows for administrators, therapy, dietary and other staff are reported to PBJ but do not count toward nurse staffing.`, items: [], count: other.length })
   }
 
+  // A census day without timesheet rows is left out of HPRD, not scored as zero hours
+  if (shifts) {
+    const have = new Set([...shifts.map(s => s.date), ...days.map(d => d.date)])
+    const missing = (census ?? []).filter(c => c.date >= start && c.date <= end && c.date <= today && c.census > 0 && !have.has(c.date)).map(c => ({ text: `${c.date}: census ${c.census}, no timesheet rows` }))
+    push({
+      id: 'rows', level: missing.length ? 'error' : 'ok', title: 'Timesheet rows for every census day',
+      detail: missing.length ? 'These days have residents but no timesheet row at all, so they are left out of HPRD. If nobody is reported for them, CMS counts them as days without RN hours.' : 'Every day with a census has timesheet rows.',
+      items: cap(missing), count: missing.length,
+    })
+  }
   // 7. Census coverage
   const censusDates = new Set((census ?? []).map(c => c.date).concat(inQ.filter(d => d.census !== null).map(d => d.date)))
   const lastDay = inQ.at(-1)?.date ?? start

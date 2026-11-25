@@ -173,10 +173,8 @@ export function rebuildDays(days: Day[], before: Dataset, after: Dataset): Day[]
   const oldCensus = new Set(before.census.map(c => c.date))
   const kept = days.filter(d => isPbjDay(d) || !(was.has(d.date) || (oldCensus.has(d.date) && !hasHours(d))))
   const byDate = new Map(kept.map(d => [d.date, d]))
-  return mergeDays(kept, aggregateDays(after.shifts, after.census).map(d => {
-    const k = byDate.get(d.date)
-    return k && !worked.has(d.date) ? { ...k, census: d.census } : d
-  }))
+  for (const c of after.census) { const k = byDate.get(c.date); if (k) byDate.set(c.date, { ...k, census: c.census }) }
+  return mergeDays([...byDate.values()], aggregateDays(after.shifts, after.census).filter(d => worked.has(d.date) || !byDate.has(d.date)))
 }
 
 /** A PBJ file brings its own census, so an older census report no longer applies to those dates. */
