@@ -50,7 +50,7 @@ export default function Docs() {
             <li><b>Hours</b>: decimals (7.5) or clock durations (7:30). Rows of zero hours are skipped; negative rows are reported.</li>
             <li><b>Pay code</b>: anything containing OT, overtime or double time counts as overtime. PTO, vacation, sick, holiday (not worked), bereavement, jury duty, leave and bonus rows are excluded, as PBJ counts only hours paid for work performed. “Holiday Worked” counts as worked. Shift differentials, weekend premiums and charge pay are excluded too: time clocks book them as extra rows that repeat hours already on a worked row. PBJ pay type codes 1 and 2 are employees, 3 is contract.</li>
             <li><b>Employment type</b>: values containing agency, registry or external are agency; contract, 1099 or traveler are contract. Both are reported to PBJ as pay type 3 (contract) and shown together as agency/contract. Everything else is an employee.</li>
-            <li><b>Names</b>: if there is an employee ID column, name columns are ignored. If there is not, each name becomes a one-way pseudonym on this device and the name is discarded.</li>
+            <li><b>Names</b>: if there is an employee ID column, name columns are ignored. If there is not, each name becomes a one-way pseudonym on this device and the name is discarded. The same happens to names found in the column mapped as the ID.</li>
           </ul>
           <h3>UKG Workforce Central and UKG Pro Workforce Management (Kronos)</h3>
           <ol>

@@ -127,7 +127,7 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
   const missing = REQUIRED[p.kind].filter(f => mapping[f] === undefined)
   const preview = useMemo(() => {
     if (missing.length) return null
-    if (p.kind === 'timesheet') { const r = importTimesheet(p.rows, det, project.titleMap, getPrefs().salt); return { issues: r.issues, ok: r.shifts.length, skipped: r.skipped, unmapped: [...r.titles].filter(([, t]) => t.code === null), dates: r.shifts.map(s => s.date) } }
+    if (p.kind === 'timesheet') { const r = importTimesheet(p.rows, det, project.titleMap, getPrefs().salt); return { issues: r.issues, ok: r.shifts.length, skipped: r.skipped, named: r.named, unmapped: [...r.titles].filter(([, t]) => t.code === null), dates: r.shifts.map(s => s.date) } }
     if (p.kind === 'census') { const r = importCensus(p.rows, det); return { issues: r.issues, ok: r.census.length, skipped: r.skipped, unmapped: [], dates: r.census.map(c => c.date) } }
     const r = importPbj(p.rows, p.det.headerRow, ccn); return { issues: r.issues, ok: r.days.length, skipped: r.skipped, unmapped: [], dates: r.days.map(d => d.date), providers: r.providers, provider: r.provider }
   }, [p, mapping, missing.length, ccn])
@@ -187,13 +187,14 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
             <label className="field" key={f}><span>{FIELD_LABEL[f]}{REQUIRED[p.kind].includes(f) ? ' *' : ''}</span>
               <select value={mapping[f] ?? ''} onChange={e => setMapping(m => { const n = { ...m }; if (e.target.value === '') delete n[f]; else n[f] = +e.target.value; return n })} aria-invalid={REQUIRED[p.kind].includes(f) && mapping[f] === undefined}>
                 <option value="">Not in file</option>
-                {p.det.headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}{p.rows[p.det.headerRow + 1]?.[i] && f !== 'name' ? `  (e.g. ${p.rows[p.det.headerRow + 1][i].slice(0, 24)})` : ''}</option>)}
+                {p.det.headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}{p.rows[p.det.headerRow + 1]?.[i] && f !== 'name' && f !== 'emp' ? `  (e.g. ${p.rows[p.det.headerRow + 1][i].slice(0, 24)})` : ''}</option>)}
               </select>
             </label>
           ))}
         </div>
       )}
       {p.kind === 'timesheet' && mapping.name !== undefined && mapping.emp === undefined && <p className="small muted">No employee ID column: names will be replaced by a one-way pseudonym on this device and discarded.</p>}
+      {preview && 'named' in preview && preview.named! > 0 && <p className="small muted">The employee ID column holds names in {plural(preview.named!, 'row')}: they will be replaced by a one-way pseudonym on this device and discarded.</p>}
       {preview && 'providers' in preview && preview.providers!.length > 1 && (
         <label className="field" style={{ marginBottom: 14, maxWidth: 520 }}><span>Facility in this file ({preview.providers!.length})</span>
           <select value={preview.provider ?? ''} onChange={e => setCcn(e.target.value || null)} aria-invalid={!preview.provider}>
