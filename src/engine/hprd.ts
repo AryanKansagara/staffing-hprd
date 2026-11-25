@@ -96,6 +96,8 @@ export interface Summary {
   weekendGap: { total: number; rn: number }
   below: Record<Measure | 'rn24' | 'any', number>
   zeroRnDays: number
+  /** The quarter of the period with the most of those days: CMS counts them per quarter. */
+  zeroRnQuarter?: { quarter: string; days: number }
   noCensusDays: number
   agency: { hours: number; share: number; cost: number; costShare: number; byGroup: Record<Group, number> }
   overtime: { hours: number; share: number; known: boolean }
@@ -129,6 +131,9 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
     for (const x of m) below[x]++
     if (m.length) below.any++
   }
+  const zeroRn = new Map<string, number>()
+  for (const d of hp) if (d.hours.rn === 0) zeroRn.set(quarterOf(d.date), (zeroRn.get(quarterOf(d.date)) ?? 0) + 1)
+  const worst = [...zeroRn].sort((a, b) => b[1] - a[1])[0]
   let agencyHours = 0, allHours = 0, otHours = 0, empHours = 0, otKnown = false
   const byGroup = { rn: 0, lpn: 0, na: 0 }
   const c = { straight: 0, ot: 0, agency: 0, total: 0 }
@@ -149,6 +154,7 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
     weekendGap: { total: weekday.total.hprd - weekend.total.hprd, rn: weekday.rn.hprd - weekend.rn.hprd },
     below,
     zeroRnDays: hp.filter(d => d.hours.rn === 0).length,
+    zeroRnQuarter: worst && { quarter: worst[0], days: worst[1] },
     noCensusDays: inRange.filter(d => !d.census && BUCKETS.some(b => d.emp[b] + d.ctr[b] > 0)).length,
     agency: { hours: agencyHours, share: allHours ? agencyHours / allHours : 0, cost: c.agency, costShare: c.total ? c.agency / c.total : 0, byGroup },
     overtime: { hours: otHours, share: empHours ? otHours / empHours : 0, known: otKnown },
@@ -184,7 +190,7 @@ export interface StarEstimate {
  * and the rest rescaled to 380. Checked against every rated facility in the October 2026 Care Compare
  * refresh (see /docs).
  */
-export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zeroRnDays'>, st: StarInputs): StarEstimate {
+export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zeroRnDays' | 'zeroRnQuarter'>, st: StarInputs): StarEstimate {
   const adj = { total: sm.total.hprd * st.factorTotal, rn: sm.rn.hprd * st.factorRn, weekend: sm.weekend.total.hprd * st.factorWeekend }
   const nextUp = (cuts: [number, number][], v: number) => {
     const i = cuts.findIndex(([, min]) => v >= min)
@@ -206,7 +212,8 @@ export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zer
   const known = parts.filter(p => p.value !== 'NaN')
   const raw = known.reduce((a, p) => a + p.points, 0)
   const max = known.reduce((a, p) => a + p.max, 0)
-  const forcedOneStar = sm.zeroRnDays >= 4 ? `${sm.zeroRnDays} days with residents and no RN hours: CMS assigns one star when there are 4 or more in a quarter.` : null
+  const zeroRn = sm.zeroRnQuarter?.days ?? sm.zeroRnDays
+  const forcedOneStar = zeroRn >= 4 ? `${zeroRn} days with residents and no RN hours${sm.zeroRnQuarter ? ` in ${sm.zeroRnQuarter.quarter.replace('Q', ' Q')}` : ''}: CMS assigns one star when there are 4 or more in a quarter.` : null
   const unavailable = forcedOneStar ? null
     : !Number.isFinite(adj.total) ? 'No estimate: no day in this period has both hours and a census.'
     : !Number.isFinite(adj.weekend) ? 'No estimate: no weekend day in this period has a census, and weekend staffing is one of the six measures.' : null
