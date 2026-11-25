@@ -173,12 +173,30 @@ test.fail('#10 a decimal comma is not ten times the hours', async ({ page }) => 
   await expect(panel(page, 'timesheet.csv')).toContainText('not a number', { timeout: 5_000 })
 })
 
-test.fail('#11 a PBJ file of another facility is not imported silently', async ({ page }) => {
+test('#11 a PBJ file of another facility is not imported silently', async ({ page }) => {
   await newFacility(page)
   await page.getByLabel('CMS CCN').fill('335123')
   await page.getByLabel('CMS CCN').blur()
   await pick(page, pbjFile())
   await expect(panel(page, 'pbj.csv').getByRole('button', { name: 'Import PBJ days' })).toBeDisabled({ timeout: 5_000 })
+  await expect(panel(page, 'pbj.csv')).toContainText('(CCN 015009), not CCN 335123')
+  const choose = panel(page, 'pbj.csv').getByLabel(/Facility in this file/)
+  await choose.selectOption('015009')
+  await choose.selectOption('') // the choice can be taken back
+  await expect(panel(page, 'pbj.csv').getByRole('button', { name: 'Import PBJ days' })).toBeDisabled()
+  await choose.selectOption('015009')
+  await panel(page, 'pbj.csv').getByRole('button', { name: 'Import PBJ days' }).click()
+  await expect(panel(page, 'pbj.csv')).toHaveCount(0)
+  expect((await stored(page)).days).toHaveLength(91)
+})
+
+test('#11 a CCN saved without its leading zero is found in a state file', async ({ page }) => {
+  await newFacility(page)
+  await page.getByLabel('CMS CCN').fill('15009')
+  await page.getByLabel('CMS CCN').blur()
+  const text = fixtureFile('pbj-015009-2026Q2.csv')
+  await importFile(page, pbjFile(text.trimEnd() + '\n' + text.split('\n')[1].replace('015009', '015010') + '\n'))
+  expect((await stored(page)).days).toHaveLength(91)
 })
 
 test.fail('#12 the issue list holds every duplicate row', async ({ page }) => {

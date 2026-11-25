@@ -124,7 +124,9 @@ function FacilityForm({ project }: { project: Project }) {
 
 function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending; project: Project; ds: Dataset; onDone: () => void; onCancel: () => void; onKind: (k: Kind) => void }) {
   const [mapping, setMapping] = useState<Mapping>(p.det.mapping)
-  const [ccn, setCcn] = useState<string | null>(project.facility.ccn || null)
+  // The facility's own CCN until another facility of the file is chosen (null: the choice was cleared).
+  const [chosen, setChosen] = useState<string | null>()
+  const ccn = chosen === undefined ? project.facility.ccn : chosen
   const [busy, setBusy] = useState(false)
   const det = { ...p.det, mapping }
   const missing = REQUIRED[p.kind].filter(f => mapping[f] === undefined)
@@ -198,9 +200,9 @@ function PendingFile({ p, project, ds, onDone, onCancel, onKind }: { p: Pending;
       )}
       {p.kind === 'timesheet' && mapping.name !== undefined && mapping.emp === undefined && <p className="small muted">No employee ID column: names will be replaced by a one-way pseudonym on this device and discarded.</p>}
       {preview && 'named' in preview && preview.named! > 0 && <p className="small muted">The employee ID column holds names in {plural(preview.named!, 'row')}: they will be replaced by a one-way pseudonym on this device and discarded.</p>}
-      {preview && 'providers' in preview && preview.providers!.length > 1 && (
+      {preview && 'providers' in preview && (preview.providers!.length > 1 || chosen || (preview.providers!.length === 1 && !preview.provider)) && (
         <label className="field" style={{ marginBottom: 14, maxWidth: 520 }}><span>Facility in this file ({preview.providers!.length})</span>
-          <select value={preview.provider ?? ''} onChange={e => setCcn(e.target.value || null)} aria-invalid={!preview.provider}>
+          <select value={preview.provider ?? ''} onChange={e => setChosen(e.target.value || (preview.providers!.length > 1 ? null : undefined))} aria-invalid={!preview.provider}>
             <option value="">Choose a facility</option>
             {preview.providers!.map(x => <option key={x.ccn} value={x.ccn}>{x.name} · CCN {x.ccn} · {x.days} days</option>)}
           </select>

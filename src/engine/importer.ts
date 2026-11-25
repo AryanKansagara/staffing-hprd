@@ -254,10 +254,13 @@ function pbjRowProblem(r: string[], headers: string[]): string | null {
 
 export interface PbjResult { days: Day[]; issues: Issue[]; provider: string | null; providers: { ccn: string; name: string; days: number }[]; skipped: number }
 
+/** CCNs have six characters; spreadsheets and hand entry drop their leading zeros. */
+const normCcn = (s: string) => s.trim().toUpperCase().padStart(6, '0')
+
 /**
  * The public PBJ Daily Nurse Staffing CSV. Headers are matched case-insensitively: the 2017-2019 files
- * use lowercase names. State and national files hold many facilities; `ccn` picks one (by default the
- * only one, otherwise nothing is imported until one is chosen).
+ * use lowercase names. State and national files hold many facilities; `ccn` picks one. Without it the
+ * only facility is taken. Nothing is imported when the file does not hold `ccn`, or holds several and none is chosen.
  */
 export function importPbj(rows: string[][], headerRow: number, ccn?: string | null): PbjResult {
   const h = rows[headerRow]
@@ -273,14 +276,17 @@ export function importPbj(rows: string[][], headerRow: number, ccn?: string | nu
     if (bad) { issues.push({ line: i + 1, level: 'error', message: bad }); skipped++; continue }
     const d = pbjRecordToDay(c => col(r, c))
     if (!d) { issues.push({ line: i + 1, level: 'error', message: `Unreadable WorkDate "${col(r, 'WorkDate') ?? ''}"` }); skipped++; continue }
-    const id = (col(r, 'PROVNUM') ?? '').padStart(6, '0')
+    const id = normCcn(col(r, 'PROVNUM') ?? '')
     const p = byProv.get(id) ?? { name: col(r, 'PROVNAME') ?? '', days: [] }
     p.days.push(d)
     byProv.set(id, p)
   }
   const providers = [...byProv].map(([c, p]) => ({ ccn: c, name: p.name, days: p.days.length })).sort((a, b) => a.name.localeCompare(b.name))
-  const pick = ccn && byProv.has(ccn) ? ccn : byProv.size === 1 ? providers[0].ccn : null
-  if (!pick && providers.length > 1) issues.push({ line: headerRow + 1, level: 'error', message: `File has ${providers.length} facilities; choose one by CCN` })
+  const want = ccn?.trim() ? normCcn(ccn) : null
+  const pick = want ? (byProv.has(want) ? want : null) : byProv.size === 1 ? providers[0].ccn : null
+  if (!pick && providers.length) issues.push({ line: headerRow + 1, level: 'error', message: providers.length > 1
+    ? `File has ${providers.length} facilities${want ? `, none with CCN ${want}` : ''}; choose one by CCN`
+    : `File is for ${providers[0].name || 'a facility'} (CCN ${providers[0].ccn}), not CCN ${want}; choose it as the facility to import it anyway` })
   const days = pick ? byProv.get(pick)!.days : []
   return { days: days.sort((a, b) => a.date.localeCompare(b.date)), issues, provider: pick, providers, skipped }
 }
