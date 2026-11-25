@@ -184,7 +184,7 @@ function Overview({ c }: { c: Ctx }) {
         <Stat k="Weekend RN HPRD" v={hprd(sm.weekend.rn.hprd)} sub={<>Weekdays {hprd(sm.weekday.rn.hprd)} · gap <b className={sm.weekendGap.rn > 0.1 ? 'neg' : ''}>{signed(-sm.weekendGap.rn)}</b></>} />
         <Stat k="Agency and contract" v={pct(sm.agency.share)} unit="of hours" sub={`${money(sm.agency.cost, { compact: true })} · ${pct(sm.agency.costShare)} of nursing cost`} />
         <Stat k="Overtime" v={sm.overtime.known ? pct(sm.overtime.share, 1) : '—'} sub={sm.overtime.known ? `of employee hours · ${Math.round(sm.overtime.hours).toLocaleString()} h at ${s.rates.otMultiplier}x` : 'Not in CMS data; import timesheets'} />
-        <Stat k="Nursing cost per resident day" v={money(sm.cost.perResidentDay)} sub={`${money(sm.cost.total, { compact: true })} for ${plural(Math.round(sm.residentDays), 'resident day')}, at your rates`} />
+        <Stat k="Nursing cost per resident day" v={money(sm.cost.perResidentDay)} sub={`${money(sm.cost.total, { compact: true })} for ${plural(Math.round(sm.residentDays), 'resident day')}, at your rates${sm.days && sm.noCensusDays ? `; ${plural(sm.noCensusDays, 'day')} without a census not in the rate` : ''}`} />
       </div>
 
       <div className="grid-2">

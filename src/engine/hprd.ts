@@ -105,6 +105,7 @@ export interface Summary {
   noCensusDays: number
   agency: { hours: number; share: number; cost: number; costShare: number; byGroup: Record<Group, number> }
   overtime: { hours: number; share: number; known: boolean }
+  /** total covers every day; perResidentDay only the days with residents, like its denominator. */
   cost: { total: number; perResidentDay: number; straight: number; ot: number; agency: number }
 }
 
@@ -141,11 +142,13 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
   let agencyHours = 0, allHours = 0, otHours = 0, empHours = 0, otKnown = false
   const byGroup = { rn: 0, lpn: 0, na: 0 }
   const c = { straight: 0, ot: 0, agency: 0, total: 0 }
+  let residentCost = 0
   for (const d of inRange) {
     for (const b of BUCKETS) { agencyHours += d.ctr[b]; byGroup[BUCKET_GROUP[b]] += d.ctr[b]; allHours += d.ctr[b] + d.emp[b]; empHours += d.emp[b] }
     if (d.ot) { otKnown = true; otHours += d.ot.rn + d.ot.lpn + d.ot.na }
     const k = cost(d, s.rates)
     c.straight += k.straight; c.ot += k.ot; c.agency += k.agency; c.total += k.total
+    if (d.census && d.census > 0) residentCost += k.total
   }
   const R = (xs: DayHprd[], f: (d: DayHprd) => number) => ratio(sum(xs, f), sum(xs, d => d.census))
   const total = R(hp, d => d.hours.total), rn = R(hp, d => d.hours.rn)
@@ -162,7 +165,7 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
     noCensusDays: inRange.filter(d => !d.census && BUCKETS.some(b => d.emp[b] + d.ctr[b] > 0)).length,
     agency: { hours: agencyHours, share: allHours ? agencyHours / allHours : 0, cost: c.agency, costShare: c.total ? c.agency / c.total : 0, byGroup },
     overtime: { hours: otHours, share: empHours ? otHours / empHours : 0, known: otKnown },
-    cost: { ...c, perResidentDay: rd ? c.total / rd : NaN },
+    cost: { ...c, perResidentDay: rd ? residentCost / rd : NaN },
   }
 }
 
