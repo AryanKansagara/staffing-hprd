@@ -250,12 +250,13 @@ test('#14 hospice and private duty staff have no code and no hours', async ({ pa
   expect((await stored(page)).days.map(worked)).toEqual([8])
 })
 
-test.fail('#15 cost per resident day uses the days that have a census', async ({ page }) => {
+test('#15 cost per resident day uses the days that have a census', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, timesheet('E1,CNA,10/03/2026,10,REG,Employee', 'E1,CNA,10/04/2026,10,REG,Employee'))
   await importFile(page, census('10/03/2026,10'))
   await tab(page, path, 'overview')
   await expect(stat(page, 'Nursing cost per resident day').locator('.v')).toHaveText('$21', { timeout: 5_000 }) // 10 h x 20.50 / 10
+  await expect(stat(page, 'Nursing cost per resident day').locator('.s')).toHaveText('$410 for 10 resident days, at your rates; 1 day without a census not in the rate')
 })
 
 test('#16 Florida does not count medication aides as CNA hours', async ({ page }) => {
