@@ -67,7 +67,7 @@ export default function Report({ id }: { id: string }) {
           {Number.isFinite(sm.weekendGap.total) ? ` Weekend staffing ran ${hprd(sm.weekendGap.total)} HPRD below weekdays (${hprd(sm.weekendGap.rn)} for RNs).` : sm.days ? ' Weekdays and weekends cannot be compared for this period.' : ''} Agency and contract staff worked {pct(sm.agency.share)} of nursing hours.
           {close.cost > 0 ? <> Filling every missed day with the cheapest mix at current rates would have cost about <b>{money(close.cost)}</b>.</> : null}
         </p>
-        <p className="small muted">Targets: {preset?.label ?? 'Custom'}{t.rn24 ? ', with an RN on site 24 hours a day' : ''}. Counting: {s.basis === 'cms' ? 'PBJ job codes 5 to 12, as Care Compare counts them' : 'direct care only (DON and administrative nurses excluded)'}. Rules checked {fmtDate(RULES_CHECKED)}.</p>
+        <p className="small muted">Targets: {preset?.label ?? 'Custom'}{t.rn24 ? ', with an RN on site 24 hours a day' : ''}. Counting: {s.basis === 'cms' ? 'PBJ job codes 5 to 12, as Care Compare counts them' : s.basis === 'ny' ? 'RNs, LPNs and certified aides (PBJ codes 7, 9 and 10), as New York counts them' : 'direct care only (DON and administrative nurses excluded)'}. Rules checked {fmtDate(RULES_CHECKED)}.</p>
 
         <h2>Hours per resident day by role</h2>
         <table>

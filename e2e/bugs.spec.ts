@@ -123,7 +123,7 @@ test('#6 nothing shows NaN or a price without a census', async ({ page }) => {
   await expect(page.locator('.report').getByRole('cell', { name: /^(Met|Below|0)$/ })).toHaveCount(4) // hours of each role over days with a census
 })
 
-test.fail('#7 the Illinois preset has the licensed and RN minimums', async ({ page }) => {
+test('#7 the Illinois preset has the licensed and RN minimums', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, HAND)
   await tab(page, path, 'overview')
@@ -131,6 +131,21 @@ test.fail('#7 the Illinois preset has the licensed and RN minimums', async ({ pa
   await bar.getByLabel('Targets').selectOption('il')
   await expect(bar.getByLabel('Licensed HPRD')).toHaveValue('0.95', { timeout: 5_000 })
   await expect(bar.getByLabel('RN HPRD')).toHaveValue('0.38')
+})
+
+test('#7 New York leaves out aides in training; Care Compare counting does not', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, timesheet('E1,CNA,10/03/2026,20,REG,Employee', 'E2,Nurse Aide in Training,10/03/2026,10,REG,Employee'))
+  await importFile(page, census('10/03/2026,10'))
+  await tab(page, path, 'overview')
+  await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('3.00')
+  const bar = page.getByRole('group', { name: 'Staffing targets' })
+  await bar.getByLabel('Targets').selectOption('ny')
+  await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('2.00')
+  await bar.getByLabel('Counting').selectOption('direct')
+  await expect(stat(page, 'Nurse aide HPRD').locator('.v')).toHaveText('3.00')
+  await page.reload() // an explicit choice is kept
+  await expect(bar.getByLabel('Counting')).toHaveValue('direct')
 })
 
 test.fail('#8 hours without a census do not fail the plausibility screen', async ({ page }) => {

@@ -1,5 +1,5 @@
 // Staffing rules, star-rating cut points and PBJ deadlines. Every figure here is dated in /docs.
-import type { Basis, Targets } from './types.ts'
+import type { Basis, Settings, Targets } from './types.ts'
 
 export const RULES_CHECKED = '2026-11-08'
 
@@ -20,9 +20,9 @@ export const PRESETS: Preset[] = [
     note: 'Finalized April 2024 (CMS-3442-F). Vacated by a federal court in Texas in April 2025, enforcement barred until October 2034 by the July 2025 budget law, and repealed by CMS interim final rule effective February 2, 2026. Kept as a benchmark many facilities still plan against.',
   },
   {
-    id: 'ny', label: 'New York (PHL 2895-b)', short: 'New York', status: 'in-force', basis: 'direct',
+    id: 'ny', label: 'New York (PHL 2895-b)', short: 'New York', status: 'in-force', basis: 'ny',
     targets: { total: 3.5, rn: null, licensed: 1.1, na: 2.2, rn24: false },
-    note: '3.5 hours of daily direct care per resident on average, of which at least 2.2 by CNAs and 1.1 by RNs or LPNs. Effective January 1, 2022.',
+    note: '3.5 hours of daily direct care per resident on average, of which at least 2.2 by CNAs and 1.1 by RNs or LPNs. Effective January 1, 2022. Aides in training counted for 2022 only (PHL 2895-b(3)(b)), and administrative nurse hours never count, so this preset counts PBJ codes 7, 9 and 10.',
   },
   {
     id: 'ca', label: 'California (H&S Code 1276.65)', short: 'California', status: 'in-force', basis: 'direct',
@@ -36,8 +36,8 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'il', label: 'Illinois (77 Ill. Adm. Code 300.1230), skilled care', short: 'Illinois', status: 'in-force', basis: 'direct',
-    targets: { total: 3.8, rn: null, licensed: null, na: null, rn24: false },
-    note: '3.8 nursing hours per resident day for residents needing skilled care and 2.5 for intermediate care, weighted by your mix; at least 10% of nursing time by licensed nurses. Set the total to your blended figure.',
+    targets: { total: 3.8, rn: 0.38, licensed: 0.95, na: null, rn24: false },
+    note: '3.8 nursing hours per resident day for residents needing skilled care and 2.5 for intermediate care, weighted by your mix. At least 25% of those hours by licensed nurses and at least 10% by RNs (300.1230(c), (k)), which is 0.95 and 0.38 at 3.8. Set all three to your blended figure: total, 25% and 10% of it. The assistant DON, half of the DON’s time, therapists and rehabilitation aides also count in Illinois; this tool does not count them here.',
   },
   {
     id: 'star4', label: 'Star-rating goal: national average', short: 'National average', status: 'goal', basis: 'cms',
@@ -47,6 +47,19 @@ export const PRESETS: Preset[] = [
 ]
 
 export const presetById = (id: string) => PRESETS.find(p => p.id === id)
+
+/** Revision 1 (November 2026): Illinois licensed and RN minimums, New York counting. */
+export const RULES_REV = 1
+
+/** Gives settings saved with a preset before its correction the corrected values, once. Custom targets and other choices stay. */
+export function correctPreset(s: Settings): Settings {
+  if ((s.rulesRev ?? 0) >= RULES_REV) return s
+  const p = presetById(s.preset)
+  const next = { ...s, rulesRev: RULES_REV }
+  if (s.preset === 'il' && p) next.targets = { ...p.targets }
+  if (s.preset === 'ny' && s.basis === 'direct') next.basis = 'ny'
+  return next
+}
 
 // ---------- Five-Star staffing domain (Technical Users' Guide, September 2026, Table 3 and Appendix Table A2) ----------
 
