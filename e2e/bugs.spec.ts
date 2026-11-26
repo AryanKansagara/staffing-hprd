@@ -23,10 +23,22 @@ test('#2 remapping a title keeps PBJ days, and excluding it drops its hours', as
   expect(await sum('2026-04-01')).toBeCloseTo(all - 60, 6)
 })
 
-test.fail('#3 a name in a column called Employee is not stored', async ({ page }) => {
+test('#3 a name in a column called Employee is not stored', async ({ page }) => {
   await newFacility(page)
   await importFile(page, csv('e.csv', 'Employee,Job Title,Work Date,Hours', '"Doe, Jane",RN,10/05/2026,8'))
-  expect((await stored(page)).json).not.toMatch(/Jane|Doe/)
+  const s = await stored(page)
+  expect(s.json).not.toMatch(/Jane|Doe/i)
+  expect(s.json).toMatch(/N-[0-9a-f]{8}/)
+  expect(s.days.map(worked)).toEqual([8])
+})
+
+test('#3 the preview says names will be replaced; Employee Type is the source, not the ID', async ({ page }) => {
+  await newFacility(page)
+  await pick(page, csv('e.csv', 'Employee,Employee Type,Job Title,Work Date,Hours', '"Doe, Jane",Agency,RN,10/05/2026,8'))
+  await expect(panel(page, 'e.csv')).toContainText('holds names in 1 row')
+  await panel(page, 'e.csv').getByRole('button', { name: 'Import timesheet' }).click()
+  await expect(panel(page, 'e.csv')).toHaveCount(0)
+  expect((await stored(page)).days[0].ctr.rn).toBe(8)
 })
 
 test.fail('#4 paid time off spelled out is not worked time', async ({ page }) => {

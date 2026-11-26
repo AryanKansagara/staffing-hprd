@@ -55,7 +55,8 @@ function score(headers: string[], field: Field): number {
   headers.forEach((h, i) => {
     const n = norm(h)
     // Never let a name column pass as the employee ID: names must not be stored.
-    if (field === 'emp' && /name/.test(n)) return
+    // "Employee type" and the like describe the employee but do not identify anyone.
+    if (field === 'emp' && /\b(names?|type|status|class|classification|category|group|job|title|position|department|dept)\b|name/.test(n)) return
     SYN[field].forEach((s, rank) => {
       const sc = n === s ? 100 - rank : n.includes(s) && s.length > 3 ? 50 - rank : 0
       if (sc > bestScore) { bestScore = sc; best = i }
@@ -125,17 +126,26 @@ export function pseudonym(name: string, salt: string): string {
   return 'N-' + h.toString(16).padStart(8, '0')
 }
 
+/**
+ * Whether an ID cell really holds a person's name: two words or "Last, First", or a bare word in a column whose
+ * header does not say it is a number or ID. Numbers, badges and codes such as E1043, AG-5512 or jdoe are IDs.
+ */
+export function looksLikeName(v: string, header: string): boolean {
+  if (/\p{L}{2,}['’.-]?\s*,\s*\p{L}|\p{L}{2,}\.?\s+\p{L}/u.test(v)) return true
+  return !/\d/.test(v) && /\p{L}{2,}/u.test(v) && !/\b(id|number|no|num|badge|code|file)\b|id$/.test(norm(header))
+}
+
 /** Report exports add subtotal rows ("Total" in the first column, or in the unit or name column). */
 const isTotalRow = (r: string[]) => /^(grand |sub)?total\b/i.test(r[0] ?? '') || r.some(c => /^(grand |sub)?totals?:?$/i.test(c))
 
-export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }> }
+export interface TimesheetResult { shifts: Shift[]; issues: Issue[]; skipped: number; titles: Map<string, { count: number; code: number | null }>; /** Rows whose ID cell held a name, replaced by a pseudonym. */ named: number }
 
 export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>, titleMap: Record<string, number | null> = {}, salt = 'local'): TimesheetResult {
   const m = det.mapping
   const shifts: Shift[] = []
   const issues: Issue[] = []
   const titles = new Map<string, { count: number; code: number | null }>()
-  let skipped = 0
+  let skipped = 0, named = 0
   const get = (r: string[], f: Field) => m[f] === undefined ? '' : (r[m[f]!] ?? '')
   for (let i = det.headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
@@ -149,6 +159,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     if (hours < 0) { issues.push({ line, level: 'warning', message: `Negative hours (${hours}) skipped; PBJ needs the corrected total for the day` }); skipped++; continue }
     if (hours === 0) { skipped++; continue }
     let emp = get(r, 'emp').trim()
+    if (emp && looksLikeName(emp, rows[det.headerRow]?.[m.emp!] ?? '')) { emp = pseudonym(emp, salt); named++ }
     if (!emp) {
       const nm = get(r, 'name')
       if (nm) emp = pseudonym(nm, salt)
@@ -174,7 +185,7 @@ export function importTimesheet(rows: string[][], det: Pick<Detected, 'headerRow
     shifts.push(s)
   }
   if (rows.length - det.headerRow - 1 <= 0) issues.push({ line: det.headerRow + 1, level: 'error', message: 'No data rows under the header' })
-  return { shifts, issues, skipped, titles }
+  return { shifts, issues, skipped, titles, named }
 }
 
 export function importCensus(rows: string[][], det: Pick<Detected, 'headerRow' | 'mapping'>): { census: CensusRow[]; issues: Issue[]; skipped: number } {
