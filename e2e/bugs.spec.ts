@@ -41,10 +41,16 @@ test('#3 the preview says names will be replaced; Employee Type is the source, n
   expect((await stored(page)).days[0].ctr.rn).toBe(8)
 })
 
-test.fail('#4 paid time off spelled out is not worked time', async ({ page }) => {
+test('#4 paid time off spelled out is not worked time', async ({ page }) => {
   await newFacility(page)
   await importFile(page, timesheet('E1,RN,10/05/2026,8,REG,Employee', 'E1,RN,10/05/2026,8,Paid Time Off,Employee', 'E2,RN,10/05/2026,8,VAC,Employee'))
   expect((await stored(page)).days.map(worked)).toEqual([8])
+})
+
+test('#4 an unknown pay code is counted and named in the validation report', async ({ page }) => {
+  await newFacility(page)
+  await pick(page, timesheet('E1,RN,10/05/2026,8,ZZ9,Employee', 'E2,RN,10/05/2026,8,REG,Employee'))
+  await expect(panel(page, 'timesheet.csv').getByRole('list', { name: 'Validation report' })).toContainText('Pay code "ZZ9" is not recognised: 1 row counted as worked hours')
 })
 
 test.fail('#5 a cut-off PBJ row is rejected', async ({ page }) => {
