@@ -5,7 +5,7 @@ import { aggregateDays, starFor, summarize, turnover } from './engine/hprd.ts'
 import { detect, importCensus, importTimesheet } from './engine/importer.ts'
 import { quarterOf, quarterRange } from './engine/rules.ts'
 import { generate, SAMPLES } from './engine/sample.ts'
-import type { Day, Settings } from './engine/types.ts'
+import { BUCKETS, type Day, type Settings, type Shift } from './engine/types.ts'
 import { defaultSettings, getData, getProjects, putData, saveProject, useProjects, uuid, EMPTY_DATASET, type Dataset, type Project, type Snapshot, type SnapshotMetrics } from './store.ts'
 
 // ---------- Samples ----------
@@ -152,9 +152,37 @@ export function useProject(id: string) {
 export async function rebuild(p: Project, ds: Dataset, titleMap = p.titleMap) {
   const shifts = ds.shifts.map(s => s.title in titleMap ? { ...s, code: titleMap[s.title] } : s)
   const next = { shifts, census: ds.census }
+  const before = p.sampleId ? ds : await getData(p.id) ?? EMPTY_DATASET
   if (!p.sampleId) await putData(p.id, next)
-  const days = mergeDays(p.days, aggregateDays(shifts, ds.census))
+  const days = rebuildDays(p.days, before, next)
   return { project: await saveProject({ ...p, titleMap, days }), ds: next }
+}
+
+/** PBJ days come without an overtime split; days added up from timesheets always have one. */
+const isPbjDay = (d: Day) => !d.ot
+
+/**
+ * Daily totals after the timesheets or census changed. Dates the old files produced and the new ones do not are
+ * dropped. A census alone never replaces hours that came from elsewhere (a PBJ file, or a sync from another
+ * device): it only changes the residents.
+ */
+export function rebuildDays(days: Day[], before: Dataset, after: Dataset): Day[] {
+  const dates = (shifts: Shift[]) => new Set(aggregateDays(shifts, []).map(d => d.date))
+  const was = dates(before.shifts), worked = dates(after.shifts)
+  const hasHours = (d: Day) => BUCKETS.some(b => d.emp[b] || d.ctr[b])
+  const oldCensus = new Set(before.census.map(c => c.date))
+  const kept = days.filter(d => isPbjDay(d) || !(was.has(d.date) || (oldCensus.has(d.date) && !hasHours(d))))
+  const byDate = new Map(kept.map(d => [d.date, d]))
+  return mergeDays(kept, aggregateDays(after.shifts, after.census).map(d => {
+    const k = byDate.get(d.date)
+    return k && !worked.has(d.date) ? { ...k, census: d.census } : d
+  }))
+}
+
+/** A PBJ file brings its own census, so an older census report no longer applies to those dates. */
+export function withoutCensus(ds: Dataset, days: Day[]): Dataset {
+  const dates = new Set(days.filter(d => d.census !== null).map(d => d.date))
+  return { ...ds, census: ds.census.filter(c => !dates.has(c.date)) }
 }
 
 /** Newer rows win by date. */
