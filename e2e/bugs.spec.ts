@@ -74,11 +74,53 @@ test('#5 a CSV with an unclosed quote is refused', async ({ page }) => {
   await expect(panel(page, 'timesheet.csv')).toHaveCount(0)
 })
 
-test.fail('#6 without a census there is no HPRD and no star', async ({ page }) => {
+test('#6 without a census there is no HPRD and no star', async ({ page }) => {
   const path = await newFacility(page)
   await importFile(page, HAND)
   await tab(page, path, 'overview')
   await expect(stat(page, 'Total nurse HPRD').locator('.v')).toHaveText('—', { timeout: 5_000 })
+})
+
+test('#6 a period without weekend days has no weekend figures, star or sentence about them', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, timesheet('E1,RN,10/05/2026,24,REG,Employee'))
+  await importFile(page, census('10/05/2026,10'))
+  await tab(page, path, 'overview')
+  await expect(stat(page, 'Total nurse HPRD').locator('.v')).toHaveText('2.40')
+  await expect(stat(page, 'Weekend total HPRD').locator('.v')).toHaveText('—')
+  await expect(page.getByText(/No estimate: no weekend day/)).toBeVisible()
+  await page.goto(`${path}/report?r=all`)
+  await expect(page.getByText('Weekdays and weekends cannot be compared')).toBeVisible()
+  await expect(page.locator('.report')).not.toContainText(/NaN|HPRD below weekdays/)
+})
+
+test('#6 census days after the last timesheet are not days of zero hours', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, HAND)
+  await importFile(page, census('10/02/2026,10', '10/03/2026,10', '10/04/2026,10', '10/05/2026,10', '10/06/2026,10'))
+  await tab(page, path, 'overview')
+  await expect(stat(page, 'Total nurse HPRD').locator('.v')).toHaveText('3.33')
+  await tab(page, path, 'pbj')
+  await expect(page.getByText('2026-10-06: census 10, no timesheet rows')).toBeVisible()
+})
+
+test('#6 nothing shows NaN or a price without a census', async ({ page }) => {
+  const path = await newFacility(page)
+  await importFile(page, HAND)
+  for (const t of ['overview', 'calendar', 'planner', 'pbj', 'benchmark', 'history'] as const) {
+    await tab(page, path, t)
+    await expect(page.locator('#main .panel').first()).toBeVisible()
+    await expect(page.locator('#main')).not.toContainText(/NaN|Every day met/)
+  }
+  await tab(page, path, 'planner')
+  await expect(page.getByText('No census to plan with')).toBeVisible()
+  await expect(stat(page, 'Cost to hit targets')).toHaveCount(0)
+  await page.goto('/app')
+  await expect(page.locator('.project-card')).toContainText('—')
+  await page.goto(`${path}/report?r=all`)
+  await expect(page.getByText('hours per resident day cannot be computed')).toBeVisible()
+  await expect(page.locator('.report')).not.toContainText('NaN')
+  await expect(page.locator('.report').getByRole('cell', { name: /^(Met|Below|0)$/ })).toHaveCount(4) // hours of each role over days with a census
 })
 
 test.fail('#7 the Illinois preset has the licensed and RN minimums', async ({ page }) => {

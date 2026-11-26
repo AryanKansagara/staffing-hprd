@@ -33,7 +33,7 @@ export default function Report({ id }: { id: string }) {
   const rd = readiness(project.days, ds.shifts.length ? ds.shifts : null, ds.census.length ? ds.census : null, today())
   const preset = presetById(s.preset)
   const t = s.targets
-  const row = (m: Measure, v: number) => ({ m, v, t: t[m], ok: t[m] === null ? null : v + 1e-9 >= t[m]! })
+  const row = (m: Measure, v: number) => ({ m, v, t: t[m], ok: t[m] === null || !Number.isFinite(v) ? null : v + 1e-9 >= t[m]! })
   const rows = [row('total', sm.total.hprd), row('rn', sm.rn.hprd), row('licensed', sm.licensed.hprd), row('na', sm.na.hprd)]
 
   return (
@@ -62,9 +62,9 @@ export default function Report({ id }: { id: string }) {
 
         <h2>Summary</h2>
         <p>
-          Over {plural(sm.days, 'day')} and {plural(Math.round(sm.residentDays), 'resident day')}, total nurse staffing averaged <b>{hprd(sm.total.hprd)} hours per resident day</b>
-          {t.total !== null ? <> against a target of {t.total.toFixed(2)} ({sm.total.hprd + 1e-9 >= t.total ? 'met' : 'not met'})</> : null}. {plural(sm.below.any, 'day')} missed at least one target.
-          Weekend staffing ran {hprd(sm.weekendGap.total)} HPRD below weekdays ({hprd(sm.weekendGap.rn)} for RNs). Agency and contract staff worked {pct(sm.agency.share)} of nursing hours.
+          {sm.days ? <>Over {plural(sm.days, 'day')} and {plural(Math.round(sm.residentDays), 'resident day')}, total nurse staffing averaged <b>{hprd(sm.total.hprd)} hours per resident day</b>
+          {t.total !== null ? <> against a target of {t.total.toFixed(2)} ({sm.total.hprd + 1e-9 >= t.total ? 'met' : 'not met'})</> : null}. {plural(sm.below.any, 'day')} missed at least one target.</> : 'No day in this period has both hours and a census, so hours per resident day cannot be computed.'}
+          {Number.isFinite(sm.weekendGap.total) ? ` Weekend staffing ran ${hprd(sm.weekendGap.total)} HPRD below weekdays (${hprd(sm.weekendGap.rn)} for RNs).` : sm.days ? ' Weekdays and weekends cannot be compared for this period.' : ''} Agency and contract staff worked {pct(sm.agency.share)} of nursing hours.
           {close.cost > 0 ? <> Filling every missed day with the cheapest mix at current rates would have cost about <b>{money(close.cost)}</b>.</> : null}
         </p>
         <p className="small muted">Targets: {preset?.label ?? 'Custom'}{t.rn24 ? ', with an RN on site 24 hours a day' : ''}. Counting: {s.basis === 'cms' ? 'PBJ job codes 5 to 12, as Care Compare counts them' : 'direct care only (DON and administrative nurses excluded)'}. Rules checked {fmtDate(RULES_CHECKED)}.</p>
@@ -73,9 +73,9 @@ export default function Report({ id }: { id: string }) {
         <table>
           <thead><tr><th>Measure</th><th className="num">Hours</th><th className="num">HPRD</th><th className="num">Target</th><th className="num">Days below</th><th>Status</th></tr></thead>
           <tbody>{rows.map(r => (
-            <tr key={r.m}><td>{MEASURE_LABEL[r.m]}</td><td className="num">{Math.round(r.m === 'total' ? sm.total.hours : r.m === 'rn' ? sm.rn.hours : r.m === 'na' ? sm.na.hours : sm.licensed.hours).toLocaleString()}</td><td className="num"><b>{hprd(r.v)}</b></td><td className="num">{hprd(r.t)}</td><td className="num">{sm.below[r.m]}</td><td>{r.ok === null ? '—' : r.ok ? 'Met' : 'Below'}</td></tr>
+            <tr key={r.m}><td>{MEASURE_LABEL[r.m]}</td><td className="num">{Math.round(r.m === 'total' ? sm.total.hours : r.m === 'rn' ? sm.rn.hours : r.m === 'na' ? sm.na.hours : sm.licensed.hours).toLocaleString()}</td><td className="num"><b>{hprd(r.v)}</b></td><td className="num">{hprd(r.t)}</td><td className="num">{sm.days ? sm.below[r.m] : '—'}</td><td>{r.ok === null ? '—' : r.ok ? 'Met' : 'Below'}</td></tr>
           ))}
-            {t.rn24 && <tr><td>RN on site 24/7 (24 RN hours a day)</td><td className="num" /><td className="num" /><td className="num" /><td className="num">{sm.below.rn24}</td><td>{sm.below.rn24 ? 'Below' : 'Met'}</td></tr>}
+            {t.rn24 && <tr><td>RN on site 24/7 (24 RN hours a day)</td><td className="num" /><td className="num" /><td className="num" /><td className="num">{sm.days ? sm.below.rn24 : '—'}</td><td>{!sm.days ? '—' : sm.below.rn24 ? 'Below' : 'Met'}</td></tr>}
           </tbody>
         </table>
 
@@ -92,8 +92,8 @@ export default function Report({ id }: { id: string }) {
         <Heatmap cells={data.cells} target={t.total ?? 3.48} label="Total nurse HPRD" />
         <div style={{ marginTop: 8 }}><HeatLegend target={t.total ?? 3.48} /></div>
 
-        <h2>Days below target ({missed.length})</h2>
-        {missed.length ? (
+        <h2>Days below target ({sm.days ? missed.length : '—'})</h2>
+        {!sm.days ? <p>Not known without a census.</p> : missed.length ? (
           <table>
             <thead><tr><th>Date</th><th className="num">Census</th><th className="num">Total</th><th className="num">RN</th><th className="num">Aide</th><th>Missed</th></tr></thead>
             <tbody>{missed.slice(0, 40).map(d => <tr key={d.date}><td>{fmtDayLong(d.date)}</td><td className="num">{d.census}</td><td className="num">{d.total.toFixed(2)}</td><td className="num">{d.rn.toFixed(2)}</td><td className="num">{d.na.toFixed(2)}</td><td>{misses(d, t).map(x => x === 'rn24' ? 'RN 24/7' : MEASURE_LABEL[x]).join(', ')}</td></tr>)}</tbody>
@@ -108,12 +108,12 @@ export default function Report({ id }: { id: string }) {
             <tr><td>Agency and contract cost (at bill rates)</td><td className="num">{money(sm.agency.cost)} ({pct(sm.agency.costShare)} of nursing cost)</td></tr>
             <tr><td>Employee overtime</td><td className="num">{sm.overtime.known ? `${Math.round(sm.overtime.hours).toLocaleString()} h (${pct(sm.overtime.share, 1)})` : 'Not available'}</td></tr>
             <tr><td>Nursing labour cost per resident day</td><td className="num">{money(sm.cost.perResidentDay)}</td></tr>
-            <tr><td>Cost to have met every target (cheapest mix)</td><td className="num">{money(close.cost)} ({Math.round(close.hours.prn + close.hours.ot + close.hours.agency).toLocaleString()} h)</td></tr>
+            <tr><td>Cost to have met every target (cheapest mix)</td><td className="num">{sm.days ? `${money(close.cost)} (${Math.round(close.hours.prn + close.hours.ot + close.hours.agency).toLocaleString()} h)` : '—'}</td></tr>
           </tbody>
         </table>
 
         <h2>Staffing star estimate</h2>
-        <p>Estimated <b>{star.stars} star{star.stars === 1 ? '' : 's'}</b> ({star.points} of 380 points). {star.forcedOneStar ?? ''}</p>
+        <p>{star.unavailable ?? <>Estimated <b>{star.stars} star{star.stars === 1 ? '' : 's'}</b> ({star.points} of 380 points). {star.forcedOneStar ?? ''}</>}</p>
         <table>
           <tbody>{star.parts.map(p => <tr key={p.key}><td>{p.label}</td><td className="num">{p.value}</td><td className="num">{p.points} / {p.max}</td></tr>)}</tbody>
         </table>

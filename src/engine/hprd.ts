@@ -7,7 +7,10 @@ import { BUCKET_GROUP, BUCKETS, CODE_BUCKET, GROUPS, zeroHours, type Basis, type
 
 // ---------- Aggregation ----------
 
-/** Sums nursing shifts (PBJ codes 5-12) by day and bucket and joins the census. Non-worked pay (PTO, sick) is excluded, as in PBJ. */
+/**
+ * Sums nursing shifts (PBJ codes 5-12) by day and bucket and joins the census. Non-worked pay (PTO, sick) is excluded, as in PBJ.
+ * A census day without a single timesheet row is not a day of zero hours: its timesheet is missing, so it makes no day.
+ */
 export function aggregateDays(shifts: Shift[], census: CensusRow[]): Day[] {
   const map = new Map<string, Day>()
   const day = (date: string) => {
@@ -24,7 +27,8 @@ export function aggregateDays(shifts: Shift[], census: CensusRow[]): Day[] {
       if (s.pay === 'overtime') d.ot![BUCKET_GROUP[b]] += s.hours
     } else d.ctr[b] += s.hours
   }
-  for (const c of census) day(c.date).census = c.census
+  const rowDates = new Set(shifts.map(s => s.date))
+  for (const c of census) if (rowDates.has(c.date)) day(c.date).census = c.census
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
@@ -72,8 +76,9 @@ export function misses(d: DayHprd, t: Targets): (Measure | 'rn24')[] {
 
 // ---------- Summary for a period ----------
 
+/** hprd is NaN, shown as a dash, when there are no resident days to divide by. */
 export interface Ratio { hours: number; census: number; hprd: number }
-const ratio = (hours: number, census: number): Ratio => ({ hours, census, hprd: census > 0 ? hours / census : 0 })
+const ratio = (hours: number, census: number): Ratio => ({ hours, census, hprd: census > 0 ? hours / census : NaN })
 
 export interface Summary {
   from: string
@@ -144,13 +149,13 @@ export function summarize(days: Day[], s: Pick<Settings, 'basis' | 'targets' | '
     noCensusDays: inRange.filter(d => !d.census && BUCKETS.some(b => d.emp[b] + d.ctr[b] > 0)).length,
     agency: { hours: agencyHours, share: allHours ? agencyHours / allHours : 0, cost: c.agency, costShare: c.total ? c.agency / c.total : 0, byGroup },
     overtime: { hours: otHours, share: empHours ? otHours / empHours : 0, known: otKnown },
-    cost: { ...c, perResidentDay: rd ? c.total / rd : 0 },
+    cost: { ...c, perResidentDay: rd ? c.total / rd : NaN },
   }
 }
 
 // ---------- Five-Star staffing estimate ----------
 
-const pointsAtLeast = (cuts: [number, number][], v: number) => cuts.find(([, min]) => v >= min)![0]
+const pointsAtLeast = (cuts: [number, number][], v: number) => Number.isNaN(v) ? 0 : cuts.find(([, min]) => v >= min)![0]
 // Turnover cut points are exact fractions (28.571 = 2/7) but Care Compare publishes turnover to one
 // decimal, so 28.6 there means a value at or under the cut. Compare at the published precision.
 const pointsAtMost = (cuts: [number, number][], v: number) => (cuts.find(([, max]) => Math.round(v * 10) <= Math.round(max * 10)) ?? cuts.at(-1)!)[0]
@@ -165,6 +170,8 @@ export interface StarEstimate {
   adjusted: { total: number; rn: number; weekend: number }
   parts: { key: string; label: string; value: string; points: number; max: number; next?: string }[]
   forcedOneStar: string | null
+  /** Why there is no estimate (stars and points are then 0). */
+  unavailable: string | null
   nextStar: { stars: number; pointsNeeded: number } | null
 }
 
@@ -193,13 +200,17 @@ export function starEstimate(sm: Pick<Summary, 'total' | 'rn' | 'weekend' | 'zer
   else missing('rto', 'RN turnover', 50, 5)
   if (st.adminDepartures !== null) parts.push({ key: 'adm', label: 'Administrator departures', value: String(st.adminDepartures), points: adminPoints(st.adminDepartures), max: 30 })
   else missing('adm', 'Administrator departures', 30, 10)
-  const raw = parts.reduce((a, p) => a + p.points, 0)
-  const max = parts.reduce((a, p) => a + p.max, 0)
-  const points = Math.round(raw * 380 / max)
+  const known = parts.filter(p => p.value !== 'NaN')
+  const raw = known.reduce((a, p) => a + p.points, 0)
+  const max = known.reduce((a, p) => a + p.max, 0)
   const forcedOneStar = sm.zeroRnDays >= 4 ? `${sm.zeroRnDays} days with residents and no RN hours: CMS assigns one star when there are 4 or more in a quarter.` : null
-  const stars = forcedOneStar ? 1 : STAR_POINTS.find(([, min]) => points >= min)![0]
+  const unavailable = forcedOneStar ? null
+    : !Number.isFinite(adj.total) ? 'No estimate: no day in this period has both hours and a census.'
+    : !Number.isFinite(adj.weekend) ? 'No estimate: no weekend day in this period has a census, and weekend staffing is one of the six measures.' : null
+  const points = unavailable ? 0 : Math.round(raw * 380 / max)
+  const stars = unavailable ? 0 : forcedOneStar ? 1 : STAR_POINTS.find(([, min]) => points >= min)![0]
   const up = STAR_POINTS.slice().reverse().find(([s]) => s === stars + 1)
-  return { stars, points, rawPoints: raw, maxPoints: max, adjusted: adj, parts, forcedOneStar, nextStar: up && !forcedOneStar ? { stars: up[0], pointsNeeded: up[1] - points } : null }
+  return { stars, points, rawPoints: raw, maxPoints: max, adjusted: adj, parts: known, forcedOneStar, unavailable, nextStar: up && !forcedOneStar && !unavailable ? { stars: up[0], pointsNeeded: up[1] - points } : null }
 }
 
 /** The star rating always counts PBJ codes 5-12, whatever basis the facility's own targets use. */
@@ -260,17 +271,17 @@ export function project(days: Day[], basis: Basis, targets: Targets, asOf?: stri
   const we = inQ.filter(d => d.weekend), twe = trail.filter(d => d.weekend)
   let remWeekend = 0
   for (let i = 1; i <= remaining; i++) if (isWeekend(addDays(last, i))) remWeekend++
-  const weRate = twe.length ? s(twe, d => d.hours.total) / s(twe, d => d.census) : 0
+  const weRate = twe.length ? s(twe, d => d.hours.total) / s(twe, d => d.census) : remWeekend ? NaN : 0
   const weQ = { hours: s(we, d => d.hours.total), census: s(we, d => d.census) }
   const fullCensus = qh.census + rate.census * remaining
   const need = (t: number | null, have: number) => t === null ? null : remaining > 0 ? Math.max(0, (t * fullCensus - have) / (rate.census * remaining)) : null
   return {
     quarter, start, end, elapsed: inQ.length, remaining,
-    qtd: { total: qh.total / qh.census, rn: qh.rn / qh.census, weekend: weQ.census ? weQ.hours / weQ.census : 0 },
+    qtd: { total: qh.total / qh.census, rn: qh.rn / qh.census, weekend: weQ.census ? weQ.hours / weQ.census : NaN },
     projected: {
       total: (qh.total + rate.total * remaining) / fullCensus,
       rn: (qh.rn + rate.rn * remaining) / fullCensus,
-      weekend: (weQ.hours + weRate * rate.census * remWeekend) / (weQ.census + rate.census * remWeekend || 1),
+      weekend: (weQ.hours + weRate * rate.census * remWeekend) / (weQ.census + rate.census * remWeekend),
     },
     needed: { total: need(targets.total, qh.total), rn: need(targets.rn, qh.rn) },
     runRate: rate,

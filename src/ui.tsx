@@ -24,13 +24,14 @@ export function Link({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAncho
 // ---------- Formatting ----------
 
 export const money = (n: number, opts: { cents?: boolean; sign?: boolean; compact?: boolean } = {}) => {
+  if (!Number.isFinite(n)) return '—'
   const a = Math.abs(n)
   const s = opts.compact && a >= 10000 ? (a >= 1e6 ? (a / 1e6).toFixed(a >= 1e7 ? 1 : 2) + 'M' : (a / 1000).toFixed(a >= 1e5 ? 0 : 1) + 'k') : a.toLocaleString('en-US', { minimumFractionDigits: opts.cents ? 2 : 0, maximumFractionDigits: opts.cents ? 2 : 0 })
   return `${n < 0 ? '−' : opts.sign && n > 0 ? '+' : ''}$${s}`
 }
 export const hprd = (n: number | null | undefined, d = 2) => n === null || n === undefined || !Number.isFinite(n) ? '—' : n.toFixed(d)
 export const pct = (n: number | null | undefined, d = 0) => n === null || n === undefined || !Number.isFinite(n) ? '—' : `${(n * 100).toFixed(d)}%`
-export const signed = (n: number, d = 2) => `${n > 0.00001 ? '+' : n < -0.00001 ? '−' : '±'}${Math.abs(n).toFixed(d)}`
+export const signed = (n: number, d = 2) => !Number.isFinite(n) ? '—' : `${n > 0.00001 ? '+' : n < -0.00001 ? '−' : '±'}${Math.abs(n).toFixed(d)}`
 export const fmtMonth = (m: string) => new Date(m.slice(0, 7) + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 export const fmtDay = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 export const fmtDayLong = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
