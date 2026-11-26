@@ -53,18 +53,25 @@ test('#4 an unknown pay code is counted and named in the validation report', asy
   await expect(panel(page, 'timesheet.csv').getByRole('list', { name: 'Validation report' })).toContainText('Pay code "ZZ9" is not recognised: 1 row counted as worked hours')
 })
 
-test.fail('#5 a cut-off PBJ row is rejected', async ({ page }) => {
+test('#5 a cut-off PBJ row is rejected', async ({ page }) => {
   await newFacility(page)
   const text = fixtureFile('pbj-015009-2026Q2.csv').trimEnd()
   await pick(page, pbjFile(text.slice(0, text.lastIndexOf('\n') + 130)))
   await expect(panel(page, 'pbj.csv').getByText('line 92')).toBeVisible({ timeout: 5_000 })
 })
 
-test.fail('#5 cut-off PBJ XML is refused', async ({ page }) => {
+test('#5 cut-off PBJ XML is refused', async ({ page }) => {
   await newFacility(page)
   const text = fixtureFile('pbj-submission-v4.10.xml')
   await pick(page, { name: 'cut.xml', text: text.slice(0, Math.floor(text.length * 0.7)) })
   await expect(page.getByText(/cut off|incomplete/)).toBeVisible({ timeout: 5_000 })
+})
+
+test('#5 a CSV with an unclosed quote is refused', async ({ page }) => {
+  await newFacility(page)
+  await pick(page, timesheet('E1,RN,10/05/2026,8,REG,Employee', 'E2,"RN,10/05/2026,8,REG,Employee', 'E3,RN,10/05/2026,8,REG,Employee'))
+  await expect(page.getByText('a quotation mark opened on line 3 is never closed')).toBeVisible()
+  await expect(panel(page, 'timesheet.csv')).toHaveCount(0)
 })
 
 test.fail('#6 without a census there is no HPRD and no star', async ({ page }) => {

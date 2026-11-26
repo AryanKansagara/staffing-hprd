@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { parseCsv } from './engine/csv.ts'
-import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
+import { detect, FIELD_LABEL, guessMapping, importCensus, importPbj, importTimesheet, isPbjXml, KIND_FIELDS, pbjXmlToRows, REQUIRED, xmlProblem, type Detected, type Field, type Issue, type Kind, type Mapping } from './engine/importer.ts'
 import { isNursing, JOB_CODES, SHORT_CODE } from './engine/jobcodes.ts'
 import type { CensusRow, Day, Shift } from './engine/types.ts'
 import { mergeDays, rebuild, sampleData, withoutCensus } from './projectData.ts'
@@ -24,6 +24,8 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
       if (!/\.(csv|txt|tsv|xml)$/i.test(f.name) && f.type && !/csv|text|xml/.test(f.type)) { toast(`${f.name}: save it as CSV first (Excel: File, Save As, CSV UTF-8).`, { tone: 'error' }); continue }
       const text = await f.text()
       if (isPbjXml(text)) {
+        const bad = xmlProblem(text)
+        if (bad) { toast(`${f.name}: ${bad}`, { tone: 'error' }); continue }
         // The PBJ XML submission file: flattened to one row per hour entry, then mapped like any timesheet.
         const x = pbjXmlToRows(text)
         if (x.rows.length < 2) { toast(`${f.name}: PBJ XML file with no staffing hours.`, { tone: 'error' }); continue }
@@ -32,7 +34,8 @@ export default function DataTab({ project, ds, reload }: { project: Project; ds:
         continue
       }
       if (/\.xml$/i.test(f.name)) { toast(`${f.name}: not a PBJ XML file (no nursingHomeData element).`, { tone: 'error' }); continue }
-      const rows = parseCsv(text)
+      let rows: string[][]
+      try { rows = parseCsv(text) } catch (e) { toast(`${f.name}: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error', ttl: 10000 }); continue }
       const det = detect(rows, f.name)
       if (!det) {
         // Unknown layout: let the user map it, starting as a timesheet.

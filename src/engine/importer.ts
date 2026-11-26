@@ -242,6 +242,16 @@ export function pbjRecordToDay(get: (col: string) => string | undefined): Day | 
   return { date, census: Number.isFinite(census) ? census : null, emp, ctr }
 }
 
+/** Why a PBJ row cannot be trusted, or null. Columns the file does not have at all (older layouts) are not checked. */
+function pbjRowProblem(r: string[], headers: string[]): string | null {
+  if (r.length < headers.length) return `Row is cut off: ${r.length} of ${headers.length} columns`
+  for (let j = 0; j < headers.length; j++) {
+    if (!/^(hrs_\w+|mdscensus)$/i.test(headers[j].trim())) continue
+    if (!/^\d*\.?\d+$|^\d+\.$/.test(r[j])) return `${headers[j]} "${r[j]}" is not a number of 0 or more`
+  }
+  return null
+}
+
 export interface PbjResult { days: Day[]; issues: Issue[]; provider: string | null; providers: { ccn: string; name: string; days: number }[]; skipped: number }
 
 /**
@@ -259,6 +269,8 @@ export function importPbj(rows: string[][], headerRow: number, ccn?: string | nu
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
     if (r.every(c => !c)) continue
+    const bad = pbjRowProblem(r, h)
+    if (bad) { issues.push({ line: i + 1, level: 'error', message: bad }); skipped++; continue }
     const d = pbjRecordToDay(c => col(r, c))
     if (!d) { issues.push({ line: i + 1, level: 'error', message: `Unreadable WorkDate "${col(r, 'WorkDate') ?? ''}"` }); skipped++; continue }
     const id = (col(r, 'PROVNUM') ?? '').padStart(6, '0')
@@ -281,12 +293,27 @@ const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').re
 
 export const isPbjXml = (text: string) => /<nursingHomeData\b/.test(text.slice(0, 4000))
 
+/** Comments and processing instructions, which may hold anything, taken out. */
+const bare = (xml: string) => xml.replace(/<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[^>[]*>/g, '')
+
+/** What is wrong with an XML file whose elements do not all close, as when a download was cut off, or null. */
+export function xmlProblem(text: string): string | null {
+  const open: string[] = []
+  let closedRoot = false
+  const rest = bare(text).replace(/<(\/?)([\w:.-]+)((?:"[^"]*"|'[^']*'|[^"'<>])*)>/g, (_, end: string, name: string, attrs: string) => {
+    if (end) { if (open.pop() !== name) open.push('?'); closedRoot = !open.length } else if (!attrs.endsWith('/')) open.push(name)
+    return ''
+  })
+  return open.length || !closedRoot || rest.includes('<') ? 'the XML is incomplete or cut off. Export it again.' : null
+}
+
 /**
  * Flattens a PBJ XML submission into timesheet rows (one per hour entry) so it goes through the same
  * mapping, validation and job-code checks as any other export. Hire and termination dates come from
  * the employees section.
  */
-export function pbjXmlToRows(text: string): { rows: string[][]; facilityId: string; quarter: string } {
+export function pbjXmlToRows(raw: string): { rows: string[][]; facilityId: string; quarter: string } {
+  const text = bare(raw)
   const people = new Map<string, { hire: string; term: string }>()
   for (const e of each(tag(text, 'employees'), 'employee')) people.set(unescape(tag(e, 'employeeId')), { hire: tag(e, 'hireDate'), term: tag(e, 'terminationDate') })
   const rows: string[][] = [['Employee ID', 'PBJ job code', 'Job title', 'Pay type code', 'Work date', 'Hours', 'Hire date', 'Termination date']]
